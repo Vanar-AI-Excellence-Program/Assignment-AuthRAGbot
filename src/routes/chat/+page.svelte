@@ -43,6 +43,57 @@
 
 	let shouldScrollToBottom = $state(true);
 
+	// Typewriter for welcome heading
+	let typedText = $state('');
+	let showCursor = $state(true);
+	const welcomeText = $derived(
+		`Hey${user?.name ? `, ${user.name.split(' ')[0]}` : ''}! I'm Pascal`
+	);
+	let typewriterDone = $state(false);
+
+	// Typewriter for subtitle
+	let typedSubtext = $state('');
+	let showSubCursor = $state(false);
+	const subtitleText = 'Your AI assistant, powered by Passly. Ask me anything — attach documents for context-grounded answers.';
+	let subtitleDone = $state(false);
+
+	$effect(() => {
+		if (!hasMessages && !typewriterDone) {
+			typedText = '';
+			let i = 0;
+			const text = welcomeText;
+			const interval = setInterval(() => {
+				if (i < text.length) {
+					typedText = text.slice(0, i + 1);
+					i++;
+				} else {
+					clearInterval(interval);
+					typewriterDone = true;
+					setTimeout(() => { showCursor = false; showSubCursor = true; }, 500);
+				}
+			}, 50);
+			return () => clearInterval(interval);
+		}
+	});
+
+	$effect(() => {
+		if (typewriterDone && !subtitleDone && showSubCursor) {
+			typedSubtext = '';
+			let i = 0;
+			const interval = setInterval(() => {
+				if (i < subtitleText.length) {
+					typedSubtext = subtitleText.slice(0, i + 1);
+					i++;
+				} else {
+					clearInterval(interval);
+					subtitleDone = true;
+					setTimeout(() => { showSubCursor = false; }, 1000);
+				}
+			}, 25);
+			return () => clearInterval(interval);
+		}
+	});
+
 	function scrollToBottom() {
 		if (chatContainer && shouldScrollToBottom) {
 			chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -284,9 +335,9 @@
 
 	<!-- Sidebar -->
 	<div
-		class="flex-shrink-0 transition-all duration-300 overflow-hidden {sidebarOpen ? 'w-72' : 'w-12'}"
+		class="flex-shrink-0 transition-all duration-300 ease-in-out overflow-hidden {sidebarOpen ? 'w-72' : 'w-[3.25rem]'}"
 	>
-		<div class="{sidebarOpen ? 'w-72' : 'w-12'} h-full transition-all duration-300">
+		<div class="{sidebarOpen ? 'w-72' : 'w-[3.25rem]'} h-full transition-all duration-300 ease-in-out">
 			<ChatSidebar
 				conversations={conversationList}
 				currentId={currentConversationId}
@@ -318,7 +369,7 @@
 		{:else}
 		<div class="flex flex-col flex-1 min-h-0">
 			<!-- Chat Header -->
-			<div class="border-b border-gray-200 dark:border-gray-700/50 px-4 sm:px-6 py-3 flex items-center justify-between flex-shrink-0 bg-white/80 dark:bg-gray-800/90 backdrop-blur-sm">
+			<div class="border-b border-gray-200 dark:border-gray-700/50 px-4 sm:px-6 py-3 flex items-center justify-between flex-shrink-0">
 				<div class="flex items-center gap-3">
 					<div class="w-9 h-9 bg-gradient-to-br from-violet-600 to-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-violet-500/20">
 						<svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -353,7 +404,7 @@
 			<!-- Messages Area -->
 			<div
 				bind:this={chatContainer}
-				class="flex-1 overflow-y-auto py-5 space-y-5 bg-amber-50/30 dark:bg-gray-900/30 {isClearing ? 'chat-clearing' : ''}"
+				class="flex-1 overflow-y-auto py-5 space-y-5 {isClearing ? 'chat-clearing' : ''}"
 			>
 				<div class="max-w-4xl mx-auto px-4 sm:px-6">
 					{#if !hasMessages}
@@ -365,10 +416,14 @@
 								</svg>
 							</div>
 							<h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-								Hey{user?.name ? `, ${user.name.split(' ')[0]}` : ''}! I'm <span class="text-blue-600 dark:text-blue-400">Pascal</span>
+								{#if typedText.includes('Pascal')}
+									{typedText.slice(0, typedText.indexOf('Pascal'))}<span class="text-blue-600 dark:text-blue-400">Pascal</span>
+								{:else}
+									{typedText}
+								{/if}{#if showCursor}<span class="inline-block w-0.5 h-6 bg-gray-800 dark:bg-white animate-pulse ml-0.5 align-text-bottom"></span>{/if}
 							</h2>
-							<p class="text-sm text-gray-500 dark:text-gray-400 max-w-md mb-1">
-								Your AI assistant, powered by Passly. Ask me anything — attach documents for context-grounded answers.
+							<p class="text-sm text-gray-500 dark:text-gray-400 max-w-md mb-1 min-h-[1.25rem]">
+								{typedSubtext}{#if showSubCursor}<span class="inline-block w-0.5 h-4 bg-gray-400 dark:bg-gray-500 animate-pulse ml-0.5 align-text-bottom"></span>{/if}
 							</p>
 							<p class="text-xs text-gray-400 dark:text-gray-500 mb-7">
 								Pick a topic below or type your own message to get started.
@@ -462,7 +517,7 @@
 			</div>
 
 			<!-- Input Area -->
-			<div class="flex-shrink-0 border-t border-gray-200 dark:border-gray-700/50 bg-white/80 dark:bg-gray-800/90 backdrop-blur-sm px-4 sm:px-6 py-3">
+			<div class="flex-shrink-0 border-t border-gray-200 dark:border-gray-700/50 px-4 sm:px-6 py-3">
 				<div class="max-w-4xl mx-auto">
 					<ChatInput bind:value={input} onsubmit={handleSubmit} disabled={isLoading} onfileupload={handleFileUpload} {attachedFile} onremovefile={() => (attachedFile = null)} />
 					<p class="text-[11px] text-gray-400 dark:text-gray-500 text-center mt-1.5">
