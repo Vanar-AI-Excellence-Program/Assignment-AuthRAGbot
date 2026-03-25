@@ -80,5 +80,18 @@ export function buildContextPrompt(chunks: RetrievedChunk[]): string {
 		)
 		.join('\n\n---\n\n');
 
-	return `\n\n## Retrieved Knowledge Base Context\nThe following excerpts from uploaded documents may be relevant to the user's question. Use them to ground your answer when applicable, and cite sources using [Source N] notation.\n\n---\n\n${contextBlocks}\n\n---\n\nWhen you use information from the above sources, include the citation like [Source 1], [Source 2], etc.`;
+	return `\n\n## Retrieved Knowledge Base Context
+The following excerpts from uploaded documents may be relevant to the user's question.
+
+IMPORTANT RULES FOR USING SOURCES:
+- ONLY use and cite these sources if the user's question is clearly about or related to the content in these documents.
+- If the user is making casual conversation, asking general knowledge questions, or anything NOT related to the uploaded documents, completely IGNORE these sources and respond normally without any [Source N] citations.
+- When you DO use information from the sources, cite them using [Source 1], [Source 2], etc. notation inline in your response.
+- Do NOT mention or reference sources if you are not using them.
+
+---
+
+${contextBlocks}
+
+---`;
 }

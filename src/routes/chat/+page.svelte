@@ -7,6 +7,7 @@
 	import {
 		type ChatNode,
 		type Citation,
+		type AttachedFile,
 		createRootNode,
 		createNode,
 		getDisplayPath,
@@ -264,13 +265,14 @@
 		parentId: string | null,
 		role: string,
 		content: string,
-		citations?: Citation[]
+		citations?: Citation[],
+		msgAttachedFile?: AttachedFile
 	): Promise<string | null> {
 		try {
 			const res = await fetch(`/api/conversations/${conversationId}/messages`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ parentId, role, content, citations })
+				body: JSON.stringify({ parentId, role, content, citations, attachedFile: msgAttachedFile })
 			});
 			if (!res.ok) return null;
 			const msg = await res.json();
@@ -354,7 +356,7 @@
 		let userDbId: string | null = null;
 		if (currentConversationId) {
 			const parentDbId = attachTo.dbId || null;
-			userDbId = await saveMessage(currentConversationId, parentDbId, 'user', userMessage);
+			userDbId = await saveMessage(currentConversationId, parentDbId, 'user', userMessage, undefined, userNode.attachedFile);
 			if (userDbId) userNode.dbId = userDbId;
 		}
 

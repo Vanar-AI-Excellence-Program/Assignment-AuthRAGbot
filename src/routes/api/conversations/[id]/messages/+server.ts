@@ -19,7 +19,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		return Response.json({ error: 'Conversation not found' }, { status: 404 });
 	}
 
-	const { parentId, role, content, citations, activeChildIndex } = await request.json();
+	const { parentId, role, content, citations, activeChildIndex, attachedFile } = await request.json();
 
 	const [msg] = await db
 		.insert(messages)
@@ -29,6 +29,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			role,
 			content,
 			citations: citations || null,
+			attachedFile: attachedFile || null,
 			activeChildIndex: activeChildIndex ?? 0
 		})
 		.returning();
