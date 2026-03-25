@@ -122,6 +122,7 @@ export const messages = pgTable(
 		role: text('role').notNull(),
 		content: text('content').notNull(),
 		citations: jsonb('citations'),
+		attachedFile: jsonb('attached_file'),
 		activeChildIndex: integer('active_child_index').default(0).notNull(),
 		createdAt: timestamp('created_at', { mode: 'date' }).defaultNow()
 	},

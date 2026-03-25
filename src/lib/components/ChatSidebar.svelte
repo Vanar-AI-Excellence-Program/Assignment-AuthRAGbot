@@ -6,6 +6,14 @@
 		provider: string;
 	};
 
+	type Document = {
+		id: string;
+		filename: string;
+		chunkCount: number;
+		status: string;
+		createdAt: string;
+	};
+
 	let {
 		conversations,
 		currentId,
@@ -32,6 +40,49 @@
 	let confirmDeleteId = $state<string | null>(null);
 	let hoverDeleteId = $state<string | null>(null);
 	let menuOpen = $state(false);
+	let showDocuments = $state(false);
+	let documents = $state<Document[]>([]);
+	let loadingDocs = $state(false);
+	let confirmDeleteDocId = $state<string | null>(null);
+	let deletingDocId = $state<string | null>(null);
+
+	async function loadDocuments() {
+		loadingDocs = true;
+		try {
+			const res = await fetch('/api/documents');
+			if (res.ok) {
+				documents = await res.json();
+			}
+		} catch {
+			console.error('Failed to load documents');
+		} finally {
+			loadingDocs = false;
+		}
+	}
+
+	function handleDeleteDoc(docId: string) {
+		if (confirmDeleteDocId === docId) {
+			deleteDocument(docId);
+			confirmDeleteDocId = null;
+		} else {
+			confirmDeleteDocId = docId;
+			setTimeout(() => { confirmDeleteDocId = null; }, 3000);
+		}
+	}
+
+	async function deleteDocument(docId: string) {
+		deletingDocId = docId;
+		try {
+			const res = await fetch(`/api/documents/${docId}`, { method: 'DELETE' });
+			if (res.ok) {
+				documents = documents.filter((d) => d.id !== docId);
+			}
+		} catch {
+			console.error('Failed to delete document');
+		} finally {
+			deletingDocId = null;
+		}
+	}
 
 	const filtered = $derived(
 		search
@@ -246,43 +297,90 @@
 
 		{#if menuOpen}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="fixed inset-0 z-40" onclick={() => (menuOpen = false)} onkeydown={() => {}}></div>
+			<div class="fixed inset-0 z-40" onclick={() => { menuOpen = false; showDocuments = false; }} onkeydown={() => {}}></div>
 
 			{#if isOpen}
 				<div class="absolute bottom-full left-2 right-2 mb-1 z-50 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg shadow-black/10 dark:shadow-black/30 py-1 animate-menu-in">
-					<button
-						onclick={() => { onclear(); menuOpen = false; }}
-						class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors rounded-lg"
-					>
-						<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-						</svg>
-						Reset conversation
-					</button>
-					<div class="mx-2 my-1 h-px bg-gray-100 dark:bg-gray-700"></div>
-					<form method="POST" action="/logout" class="contents">
+					{#if showDocuments}
+						<!-- Document list panel -->
+						<div class="px-3 py-2">
+							<button onclick={() => (showDocuments = false)} class="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mb-2">
+								<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+								</svg>
+								Back
+							</button>
+							<p class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Uploaded Documents</p>
+							{#if loadingDocs}
+								<div class="flex items-center justify-center py-4">
+									<div class="w-5 h-5 border-2 border-gray-300 dark:border-gray-600 border-t-blue-500 rounded-full animate-spin"></div>
+								</div>
+							{:else if documents.length === 0}
+								<p class="text-xs text-gray-400 dark:text-gray-500 text-center py-3">No documents uploaded</p>
+							{:else}
+								<div class="max-h-48 overflow-y-auto space-y-1 -mx-1 px-1">
+									{#each documents as doc (doc.id)}
+										<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg group/doc {deletingDocId === doc.id ? 'opacity-50' : 'hover:bg-gray-50 dark:hover:bg-gray-700/40'}">
+											<svg class="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+											</svg>
+											<div class="flex-1 min-w-0">
+												<p class="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">{doc.filename}</p>
+												<p class="text-[10px] text-gray-400 dark:text-gray-500">{doc.chunkCount} chunks</p>
+											</div>
+											<button
+												onclick={() => handleDeleteDoc(doc.id)}
+												disabled={deletingDocId === doc.id}
+												class="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md transition-all duration-150
+													{confirmDeleteDocId === doc.id
+														? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+														: 'opacity-0 group-hover/doc:opacity-100 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}"
+												title={confirmDeleteDocId === doc.id ? 'Click again to confirm' : 'Delete document'}
+											>
+												<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+												</svg>
+											</button>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					{:else}
 						<button
-							type="submit"
-							class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors rounded-lg"
+							onclick={() => { showDocuments = true; loadDocuments(); }}
+							class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors rounded-lg"
 						>
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+							<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 							</svg>
-							Log out
+							My Documents
 						</button>
-					</form>
+						<div class="mx-2 my-1 h-px bg-gray-100 dark:bg-gray-700"></div>
+						<form method="POST" action="/logout" class="contents">
+							<button
+								type="submit"
+								class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors rounded-lg"
+							>
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+								</svg>
+								Log out
+							</button>
+						</form>
+					{/if}
 				</div>
 			{:else}
 				<div class="absolute bottom-full left-0 right-0 mb-1 z-50 flex flex-col items-center gap-1 py-1 animate-menu-in">
 					<button
-						onclick={() => { onclear(); menuOpen = false; }}
+						onclick={() => { showDocuments = true; loadDocuments(); isOpen = true; }}
 						class="group/tip relative w-9 h-9 flex items-center justify-center rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg shadow-black/10 dark:shadow-black/30 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-						title="Reset conversation"
+						title="My Documents"
 					>
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 						</svg>
-						<span class="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 dark:bg-gray-700 rounded-md whitespace-nowrap opacity-0 pointer-events-none group-hover/tip:opacity-100 transition-opacity duration-150">Reset conversation</span>
+						<span class="absolute left-full ml-2 px-2 py-1 text-xs font-medium text-white bg-gray-900 dark:bg-gray-700 rounded-md whitespace-nowrap opacity-0 pointer-events-none group-hover/tip:opacity-100 transition-opacity duration-150">My Documents</span>
 					</button>
 					<form method="POST" action="/logout" class="contents">
 						<button

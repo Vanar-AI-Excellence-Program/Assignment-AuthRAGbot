@@ -53,6 +53,14 @@
 	let codeBlocks: string[] = [];
 
 	const renderer = new marked.Renderer();
+
+	// Wrap tables in a scrollable container for mobile
+	const origTable = renderer.table.bind(renderer);
+	renderer.table = (token: Parameters<typeof renderer.table>[0]) => {
+		const html = origTable(token);
+		return `<div class="table-wrapper">${html}</div>`;
+	};
+
 	renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
 		const language = (lang || '').trim().toLowerCase();
 		const displayLang = langNames[language] || language.charAt(0).toUpperCase() + language.slice(1) || 'Code';
@@ -135,7 +143,7 @@
 </script>
 
 <div class="flex {isUser ? 'justify-end' : 'justify-start'} animate-fade-in">
-	<div class="flex items-start gap-2.5 {isUser ? 'flex-row-reverse max-w-[75%]' : 'max-w-[90%] lg:max-w-[75%]'}">
+	<div class="flex items-start gap-2.5 {isUser ? 'flex-row-reverse max-w-[85%] sm:max-w-[75%]' : 'max-w-[95%] sm:max-w-[90%] lg:max-w-[75%]'}">
 		<!-- Avatar -->
 		{#if isUser}
 			{#if userImage}
@@ -234,11 +242,11 @@
 		{:else}
 			<div class="group">
 				<div
-					class="rounded-2xl rounded-tl-sm text-gray-800 dark:text-gray-200 px-4 py-2.5 shadow-sm min-w-0 overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+					class="rounded-2xl rounded-tl-sm text-gray-800 dark:text-gray-200 px-4 py-2.5 shadow-sm min-w-0 overflow-x-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
 					onclick={handleBubbleClick}
 					role="presentation"
 				>
-					<div class="prose prose-sm dark:prose-invert max-w-none break-words overflow-hidden">
+					<div class="prose prose-sm dark:prose-invert max-w-none break-words">
 						{@html renderedContent}
 						{#if isStreaming && content}
 							<span class="inline-block w-0.5 h-4 bg-violet-500 animate-pulse ml-0.5 align-text-bottom"></span>

@@ -39,15 +39,16 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 - **Conversation persistence** — chats saved to database, accessible across sessions
 - **Conversation sidebar** — search, browse, and delete past conversations; collapsed by default on mobile, open on desktop
 - **Conversation branching** — edit and fork past messages without losing history, with left/right arrow navigation between branches
-- **File attachment UX** — uploaded documents appear as a chip above the input area; the chip persists across messages until manually dismissed, and displays inline in each sent message that used it
+- **File attachment UX** — uploaded documents appear as a chip above the input area; the chip persists across messages until manually dismissed, and displays inline in each sent message that used it. Attachment metadata is saved to the database, so file indicators remain visible on messages after page reload
 - **Copy, Edit & Regenerate** buttons on messages (always visible on mobile, hover-reveal on desktop)
 - **Separated input controls** — send and attach buttons sit outside the input border for a cleaner look
 - **Markdown rendering** — code blocks with syntax highlighting (highlight.js), tables, lists, and formatted text via `marked` and Tailwind Typography
+- **Mobile-optimized rendering** — code blocks and tables scroll horizontally within their container on small screens instead of breaking the page layout; reduced font sizes and padding on mobile for better readability
 - **Prompt engineering** — system prompt ensures properly formatted responses with fenced code blocks, markdown tables, and structured output
 - **Reusable modules** — chat tree logic extracted to `src/lib/chat.ts`; `ChatMessage`, `ChatSidebar`, and `ChatInput` components encapsulate UI
 - **Loading states** — animated typing indicator while AI is generating
 - **Error handling** — user-friendly error messages with dismiss capability
-- **Clear chat** — reset conversation with one click
+- **Document management** — "My Documents" panel in the user menu lets users view and delete uploaded documents with double-click confirmation, giving users full control over their data
 - **Protected route** — only authenticated users can access `/chat`
 - **Responsive** — sidebar overlays the chat area instead of pushing content; collapses on mobile with backdrop dismiss
 
@@ -56,6 +57,8 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 - **Smart chunking** — recursive text splitting (250 chars, 50-char overlap) preserving semantic boundaries (paragraphs, sentences, words)
 - **Sentence embeddings** — 384-dimensional vectors via `all-MiniLM-L6-v2` model running in a dedicated Python microservice
 - **Vector similarity search** — pgvector cosine distance (`<=>`) retrieves the top 5 most relevant chunks per query (threshold ≥ 0.3)
+- **Context-aware retrieval** — uses the last 3 conversation exchanges (not just the last message) for embedding search, so follow-up questions about a document still retrieve relevant chunks
+- **Smart citation display** — citations only appear when the LLM actually uses document content in its response; casual conversation remains citation-free
 - **Per-user isolation** — each user's documents are scoped to their account
 - **Status tracking** — documents show processing/ready/error status with chunk counts
 
@@ -229,6 +232,7 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 | `role` | text | `user` or `assistant` |
 | `content` | text | Message content |
 | `citations` | json | Source citation metadata |
+| `attached_file` | json | Attached document metadata (name, chunkCount) |
 | `activeChildIndex` | integer | Active branch index |
 | `createdAt` | timestamp | Creation date |
 
@@ -407,11 +411,11 @@ The Retrieval-Augmented Generation pipeline works as follows:
 3. **Chunk** — Text is recursively split into ~250-character chunks with 50-character overlap, preserving paragraph and sentence boundaries
 4. **Embed** — Each chunk is sent to the embedding service, which generates a 384-dimensional vector using `all-MiniLM-L6-v2`
 5. **Store** — Chunks and their embeddings are stored in PostgreSQL using pgvector
-6. **Query** — When a user sends a chat message, the query is embedded and compared against all chunks using cosine distance
-7. **Retrieve** — Top 5 most similar chunks are retrieved. If a document is explicitly attached, retrieval is scoped to that file so follow-up questions always pull relevant context
-8. **Augment** — Retrieved chunks are injected into the system prompt as context with source labels
-9. **Generate** — The LLM generates a response using the context, citing sources with `[Source N]` notation
-10. **Cite** — Citations are appended to the streamed response and rendered as interactive `CitationBadge` components
+6. **Query** — When a user sends a chat message, the last 3 exchanges of conversation history are combined into a single search query and embedded, ensuring follow-up questions maintain document context
+7. **Retrieve** — Top 5 most similar chunks are retrieved (threshold ≥ 0.3). If a document is explicitly attached, retrieval is scoped to that file
+8. **Augment** — Retrieved chunks are injected into the system prompt as context with source labels. The LLM is instructed to only cite sources when the query is related to document content; casual conversation ignores retrieved context
+9. **Generate** — The LLM generates a response using the context, citing sources with `[Source N]` notation when relevant
+10. **Cite** — Citations are only appended to the response when the LLM explicitly uses `[Source N]` references or its response contains content from the retrieved chunks, and rendered as interactive `CitationBadge` components
 
 ---
 

@@ -38,7 +38,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
         // File is attached — retrieve from that specific document (no threshold, user explicitly attached it)
         relevantChunks = await retrieveChunksByFilename(lastUserMessage.content, attachedFileName, userId, 5);
       } else {
-        relevantChunks = await retrieveRelevantChunks(lastUserMessage.content, userId, 5, 0.3);
+        // Build a richer search query using recent conversation context
+        // This helps follow-up questions like "tell me more about the document"
+        const recentMessages = messages.slice(-6); // last 3 exchanges
+        const searchQuery = recentMessages
+          .map((m: { role: string; content: string }) => m.content)
+          .join(" ")
+          .slice(-500); // cap length for embedding
+        relevantChunks = await retrieveRelevantChunks(searchQuery, userId, 5, 0.3);
       }
       if (relevantChunks.length > 0) {
         ragContext = buildContextPrompt(relevantChunks);
@@ -72,9 +79,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 - When the user asks for code in a specific language, write the code in that exact language.
 - Use inline \`code\` for short references like variable names, commands, or file paths.
 - Add brief comments in code when helpful.
-- IMPORTANT: Keep ALL lines in code blocks under 60 characters wide. Break long lines using the language's line continuation or by splitting into multiple shorter lines. This is critical for readability in the chat UI.
-- For long strings, URLs, or expressions in code, split them across multiple lines.
-- Never put long single-line comments in code — wrap them to stay under 60 chars.
+- Keep code lines reasonably short for readability. Break very long lines when natural.
 
 ## Tables
 - When presenting tabular or comparative data, always use Markdown tables with proper headers and alignment.
@@ -101,27 +106,41 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     messages,
   });
 
-  // Create a TransformStream to append citations after the text stream
+  // Create a TransformStream to collect full response and conditionally append citations
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
 
   (async () => {
     try {
       const textStream = result.toTextStreamResponse();
       const reader = textStream.body!.getReader();
+      let fullResponse = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         await writer.write(value);
+        fullResponse += decoder.decode(value, { stream: true });
       }
 
-      // Append citations marker at the end of the stream
+      // Append citations if chunks were retrieved and the response references
+      // the source content (either via [Source N] notation or by using document info)
       if (citations.length > 0) {
-        await writer.write(
-          encoder.encode(`\n\n<!--CITATIONS:${JSON.stringify(citations)}-->`)
-        );
+        // Check if the LLM used the source content — either explicit citations
+        // or if the response contains keywords from the source snippets
+        const usedSources = /\[Source \d+\]/.test(fullResponse);
+        const referencedContent = citations.some((c) => {
+          const keywords = c.snippet.split(/\s+/).filter((w) => w.length > 5).slice(0, 5);
+          return keywords.some((kw) => fullResponse.toLowerCase().includes(kw.toLowerCase()));
+        });
+
+        if (usedSources || referencedContent) {
+          await writer.write(
+            encoder.encode(`\n\n<!--CITATIONS:${JSON.stringify(citations)}-->`)
+          );
+        }
       }
     } catch (err) {
       console.error("Stream error:", err);

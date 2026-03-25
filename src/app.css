@@ -220,18 +220,40 @@ html.dark {
 }
 
 /* Chat prose table grid styling */
-.prose table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 0.875rem;
+.prose .table-wrapper {
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
 	margin: 0.75rem 0;
-	overflow: hidden;
 	border-radius: 0.5rem;
 	border: 1px solid #e5e7eb;
 }
 
-.dark .prose table {
+.dark .prose .table-wrapper {
 	border-color: #374151;
+}
+
+.prose table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.875rem;
+	margin: 0;
+	overflow: hidden;
+	border-radius: 0.5rem;
+	border: none;
+}
+
+@media (max-width: 640px) {
+	.prose table {
+		font-size: 0.75rem;
+	}
+
+	.prose thead th {
+		padding: 0.4rem 0.5rem;
+	}
+
+	.prose tbody td {
+		padding: 0.35rem 0.5rem;
+	}
 }
 
 .prose thead th {
@@ -329,6 +351,27 @@ html.dark {
 	white-space: pre;
 	word-break: normal;
 	overflow-wrap: normal;
+}
+
+@media (max-width: 640px) {
+	.code-block-wrapper {
+		margin: 0.5rem -0.5rem;
+		border-radius: 0.5rem;
+	}
+
+	.code-block-wrapper pre {
+		padding: 0.75rem !important;
+	}
+
+	.code-block-wrapper pre code {
+		font-size: 0.7rem;
+		line-height: 1.5;
+	}
+
+	.code-block-header {
+		padding: 0.3rem 0.65rem;
+		font-size: 0.625rem;
+	}
 }
 
 /* Code block copy button */

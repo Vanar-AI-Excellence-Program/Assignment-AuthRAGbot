@@ -1,6 +1,6 @@
 {
-  "id": "ddc4ff68-f365-4238-8ec0-c9cee2b050cd",
-  "prevId": "5a1136b7-f936-42eb-9bdc-699dbf71b9a2",
+  "id": "d0126e13-7e1a-4dd8-bd67-67b248536e67",
+  "prevId": "a0b6ac7c-de95-4be1-ac14-2e1ecf1684e9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -404,6 +404,12 @@
         },
         "citations": {
           "name": "citations",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attached_file": {
+          "name": "attached_file",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false

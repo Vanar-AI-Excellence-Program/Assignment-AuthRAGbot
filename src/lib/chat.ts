@@ -31,6 +31,7 @@ export type DBMessage = {
 	role: string;
 	content: string;
 	citations: Citation[] | null;
+	attachedFile: AttachedFile | null;
 	activeChildIndex: number;
 	createdAt: string;
 };
@@ -166,6 +167,7 @@ export function treeFromMessages(dbMessages: DBMessage[]): ChatNode {
 			activeChildIndex: msg.activeChildIndex,
 			dbId: msg.id,
 			citations: msg.citations || undefined,
+			attachedFile: msg.attachedFile || undefined,
 			createdAt: msg.createdAt
 		});
 	}
