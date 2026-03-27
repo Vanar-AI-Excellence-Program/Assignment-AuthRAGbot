@@ -277,8 +277,8 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 ### 1. Clone and Install
 
 ```bash
-git clone https://github.com/saadzahid-dot/AuthChatbot-Assignment-2.git
-cd AuthChatbot-Assignment-2
+git clone [https://github.com/saadzahid-dot/AuthChatbot-Assignment-2](https://github.com/Vanar-AI-Excellence-Program/Assignment-AuthRAGbot).git
+cd Assignment-AuthRAGbot
 pnpm install
 ```
 
