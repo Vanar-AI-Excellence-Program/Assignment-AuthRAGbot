@@ -4,7 +4,12 @@ import { db } from '$lib/server/db';
 import { users, sessions } from '$lib/server/db/schema';
 import { eq, desc, count, gt } from 'drizzle-orm';
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async (event) => {
+	const session = await event.locals.auth();
+	if (!session?.user || (session.user as { role?: string }).role !== 'admin') {
+		return { users: [], stats: { totalUsers: 0, totalSessions: 0 } };
+	}
+
 	const allUsers = await db
 		.select({
 			id: users.id,
@@ -43,6 +48,7 @@ export const actions: Actions = {
 	deleteUser: async ({ request, locals }) => {
 		const session = await locals.auth();
 		if (!session?.user?.id) return fail(401, { error: 'Not authenticated.' });
+		if ((session.user as { role?: string }).role !== 'admin') return fail(403, { error: 'Admin access required.' });
 
 		const formData = await request.formData();
 		const userId = formData.get('userId') as string;
@@ -59,6 +65,7 @@ export const actions: Actions = {
 	toggleActive: async ({ request, locals }) => {
 		const session = await locals.auth();
 		if (!session?.user?.id) return fail(401, { error: 'Not authenticated.' });
+		if ((session.user as { role?: string }).role !== 'admin') return fail(403, { error: 'Admin access required.' });
 
 		const formData = await request.formData();
 		const userId = formData.get('userId') as string;
@@ -80,6 +87,7 @@ export const actions: Actions = {
 	toggleRole: async ({ request, locals }) => {
 		const session = await locals.auth();
 		if (!session?.user?.id) return fail(401, { error: 'Not authenticated.' });
+		if ((session.user as { role?: string }).role !== 'admin') return fail(403, { error: 'Admin access required.' });
 
 		const formData = await request.formData();
 		const userId = formData.get('userId') as string;

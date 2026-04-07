@@ -8,7 +8,15 @@ const config = {
 		adapter: adapter(),
 		csp: {
 			directives: {
-				'img-src': ['self', 'https://lh3.googleusercontent.com', 'https://avatars.githubusercontent.com']
+				'default-src': ['self'],
+				'script-src': ['self'],
+				'style-src': ['self', 'unsafe-inline'],
+				'img-src': ['self', 'https://lh3.googleusercontent.com', 'https://avatars.githubusercontent.com'],
+				'connect-src': ['self'],
+				'font-src': ['self'],
+				'frame-ancestors': ['none'],
+				'base-uri': ['self'],
+				'form-action': ['self']
 			}
 		}
 	}

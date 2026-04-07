@@ -1,4 +1,4 @@
-let dark = $state(false);
+let dark = $state(true);
 
 export const theme = {
 	get dark() {
@@ -11,8 +11,13 @@ export const theme = {
 	},
 	toggle() {
 		if (typeof document === 'undefined') return;
+		// Enable transitions only during theme switch, then remove
+		document.documentElement.classList.add('dark-transitioning');
 		dark = !dark;
 		document.documentElement.classList.toggle('dark', dark);
 		localStorage.setItem('theme', dark ? 'dark' : 'light');
+		setTimeout(() => {
+			document.documentElement.classList.remove('dark-transitioning');
+		}, 350);
 	}
 };

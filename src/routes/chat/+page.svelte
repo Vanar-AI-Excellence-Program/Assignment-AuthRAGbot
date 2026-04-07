@@ -43,44 +43,65 @@
 	const displayPath = $derived.by(() => getDisplayPath(root));
 	const hasMessages = $derived(displayPath.length > 0);
 
+	// Message windowing — only render recent messages to save DOM/memory on low-end devices
+	const MAX_VISIBLE_MESSAGES = 40;
+	let showAllMessages = $state(false);
+	const visibleMessages = $derived.by(() => {
+		if (showAllMessages || displayPath.length <= MAX_VISIBLE_MESSAGES) {
+			return displayPath;
+		}
+		return displayPath.slice(-MAX_VISIBLE_MESSAGES);
+	});
+	const hiddenMessageCount = $derived(displayPath.length - visibleMessages.length);
+
 	let shouldScrollToBottom = $state(true);
 
-	// Typewriter for welcome heading
-	let typedText = $state('');
-	let showCursor = $state(true);
+	// Typewriter for welcome heading — starts with full text for SSR/LCP
 	const welcomeText = $derived(
 		`Hey${user?.name ? `, ${user.name.split(' ')[0]}` : ''}! I'm Pascal`
 	);
-	let typewriterDone = $state(false);
+	const subtitleText = 'Your AI assistant, powered by Passly. Ask me anything — attach documents for context-grounded answers.';
 
-	// Typewriter for subtitle
+	let chatMounted = $state(false);
+	let typedText = $state('');
+	let showCursor = $state(false);
+	let typewriterDone = $state(true);
 	let typedSubtext = $state('');
 	let showSubCursor = $state(false);
-	const subtitleText = 'Your AI assistant, powered by Passly. Ask me anything — attach documents for context-grounded answers.';
-	let subtitleDone = $state(false);
+	let subtitleDone = $state(true);
 
+	// Initialize full text for SSR, reset on client mount
 	$effect(() => {
-		if (!hasMessages && !typewriterDone) {
+		if (chatMounted) return;
+		chatMounted = true;
+		if (!hasMessages) {
 			typedText = '';
-			let i = 0;
-			const text = welcomeText;
-			const interval = setInterval(() => {
-				if (i < text.length) {
-					typedText = text.slice(0, i + 1);
-					i++;
-				} else {
-					clearInterval(interval);
-					typewriterDone = true;
-					setTimeout(() => { showCursor = false; showSubCursor = true; }, 500);
-				}
-			}, 50);
-			return () => clearInterval(interval);
+			typewriterDone = false;
+			showCursor = true;
+			typedSubtext = '';
+			subtitleDone = false;
 		}
 	});
 
 	$effect(() => {
+		if (!chatMounted || hasMessages || typewriterDone) return;
+		let i = 0;
+		const text = welcomeText;
+		const interval = setInterval(() => {
+			if (i < text.length) {
+				typedText = text.slice(0, i + 1);
+				i++;
+			} else {
+				clearInterval(interval);
+				typewriterDone = true;
+				setTimeout(() => { showCursor = false; showSubCursor = true; }, 500);
+			}
+		}, 50);
+		return () => clearInterval(interval);
+	});
+
+	$effect(() => {
 		if (typewriterDone && !subtitleDone && showSubCursor) {
-			typedSubtext = '';
 			let i = 0;
 			const interval = setInterval(() => {
 				if (i < subtitleText.length) {
@@ -96,9 +117,16 @@
 		}
 	});
 
+
+
+	let scrollRafId: number | null = null;
 	function scrollToBottom() {
 		if (chatContainer && shouldScrollToBottom) {
-			chatContainer.scrollTop = chatContainer.scrollHeight;
+			if (scrollRafId) cancelAnimationFrame(scrollRafId);
+			scrollRafId = requestAnimationFrame(() => {
+				if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+				scrollRafId = null;
+			});
 		}
 	}
 
@@ -111,6 +139,7 @@
 		isClearing = true;
 		error = null;
 		currentConversationId = null;
+		showAllMessages = false;
 		setTimeout(() => {
 			root = createRootNode();
 			forkTargetId = null;
@@ -242,6 +271,7 @@
 			currentConversationId = convoId;
 			provider = 'gemini';
 			shouldScrollToBottom = true;
+			showAllMessages = false;
 		} catch (e) {
 			console.error('Failed to load conversation:', e);
 		}
@@ -426,7 +456,6 @@
 
 <svelte:head>
 	<title>Pascal - Passly</title>
-	<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css" />
 </svelte:head>
 
 <div class="relative h-[calc(100dvh-4rem)]">
@@ -498,9 +527,9 @@
 			<!-- Messages Area -->
 			<div
 				bind:this={chatContainer}
-				class="flex-1 overflow-y-auto py-5 space-y-5 pl-14 {isClearing ? 'chat-clearing' : ''}"
+				class="flex-1 overflow-y-auto overflow-x-hidden py-5 space-y-5 pl-14 {isClearing ? 'chat-clearing' : ''}"
 			>
-				<div class="max-w-4xl mx-auto px-4 sm:px-6">
+				<div class="max-w-4xl mx-auto px-2 sm:px-6 min-w-0">
 					{#if !hasMessages}
 						<!-- Welcome State -->
 						<div class="flex flex-col items-center justify-center min-h-[60vh] text-center">
@@ -509,15 +538,23 @@
 									<line x1="12" y1="3" x2="12" y2="6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /><circle cx="12" cy="2" r="1.5" fill="currentColor" stroke="none" /><rect x="4" y="6" width="16" height="12" rx="4" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="1.5" /><circle cx="9" cy="12" r="2" fill="white" stroke="none" /><circle cx="15" cy="12" r="2" fill="white" stroke="none" /><circle class="pascal-eye" cx="9.5" cy="12" r="1" fill="currentColor" stroke="none" /><circle class="pascal-eye" cx="15.5" cy="12" r="1" fill="currentColor" stroke="none" /><path d="M9.5 16 Q12 18.5 14.5 16" stroke="white" stroke-width="1.2" stroke-linecap="round" fill="none" /><rect x="2" y="10" width="2" height="4" rx="1" fill="currentColor" opacity="0.5" stroke="none" /><rect x="20" y="10" width="2" height="4" rx="1" fill="currentColor" opacity="0.5" stroke="none" />
 								</svg>
 							</div>
-							<h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-								{#if typedText.includes('Pascal')}
-									{typedText.slice(0, typedText.indexOf('Pascal'))}<span class="text-blue-600 dark:text-blue-400">Pascal</span>
-								{:else}
-									{typedText}
-								{/if}{#if showCursor}<span class="inline-block w-0.5 h-6 bg-gray-800 dark:bg-white animate-pulse ml-0.5 align-text-bottom"></span>{/if}
+							<h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2 relative">
+								<!-- Invisible full text reserves space (prevents CLS) -->
+								<span class="invisible select-none" aria-hidden="true">{welcomeText}</span>
+								<span class="absolute inset-0">
+									{#if typedText.includes('Pascal')}
+										{typedText.slice(0, typedText.indexOf('Pascal'))}<span class="text-blue-600 dark:text-blue-400">Pascal</span>
+									{:else}
+										{typedText}
+									{/if}{#if showCursor}<span class="inline-block w-0.5 h-6 bg-gray-800 dark:bg-white animate-pulse ml-0.5 align-text-bottom"></span>{/if}
+								</span>
 							</h2>
-							<p class="text-sm text-gray-500 dark:text-gray-400 max-w-md mb-1 min-h-[1.25rem]">
-								{typedSubtext}{#if showSubCursor}<span class="inline-block w-0.5 h-4 bg-gray-400 dark:bg-gray-500 animate-pulse ml-0.5 align-text-bottom"></span>{/if}
+							<p class="text-sm text-gray-500 dark:text-gray-400 max-w-md mb-1 relative">
+								<!-- Invisible full text reserves space (prevents CLS) -->
+								<span class="invisible select-none" aria-hidden="true">{subtitleText}</span>
+								<span class="absolute inset-0">
+									{typedSubtext}{#if showSubCursor}<span class="inline-block w-0.5 h-4 bg-gray-400 dark:bg-gray-500 animate-pulse ml-0.5 align-text-bottom"></span>{/if}
+								</span>
 							</p>
 							<p class="text-xs text-gray-400 dark:text-gray-500 mb-7">
 								Pick a topic below or type your own message to get started.
@@ -551,7 +588,18 @@
 						</div>
 					{/if}
 
-					{#each displayPath as { node, siblingCount, siblingIndex } (node.id)}
+					{#if hiddenMessageCount > 0}
+						<div class="flex justify-center mb-4">
+							<button
+								onclick={() => (showAllMessages = true)}
+								class="text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 px-4 py-2 rounded-full border border-blue-200 dark:border-blue-800 transition-colors"
+							>
+								Load {hiddenMessageCount} older message{hiddenMessageCount !== 1 ? 's' : ''}
+							</button>
+						</div>
+					{/if}
+
+					{#each visibleMessages as { node, siblingCount, siblingIndex } (node.id)}
 						{#if node.role === 'assistant' && node.content === '' && isLoading}
 							<!-- Typing indicator -->
 							<div class="flex justify-start animate-fade-in">

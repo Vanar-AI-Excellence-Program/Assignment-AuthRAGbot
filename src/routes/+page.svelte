@@ -3,33 +3,44 @@
 
 	let { data } = $props<{ data: PageData }>();
 
-	// Typewriter for heading
-	let typedHeading = $state('');
-	let showHeadingCursor = $state(true);
-	let headingDone = $state(false);
 	const headingText = 'Secure Authentication';
-
-	// Typewriter for subtitle
-	let typedSubtitle = $state('');
-	let showSubtitleCursor = $state(false);
-	let subtitleDone = $state(false);
 	const subtitleText = 'Protect your users with enterprise-grade security. Email sign-up, encrypted passwords, and persistent database sessions.';
 
+	// Typewriter state — start with full text for SSR (good LCP), animate on client
+	let mounted = $state(false);
+	let typedHeading = $state(headingText);
+	let showHeadingCursor = $state(false);
+	let headingDone = $state(true);
+
+	let typedSubtitle = $state(subtitleText);
+	let showSubtitleCursor = $state(false);
+	let subtitleDone = $state(true);
+
+	// On client mount: reset and start typewriter animation
 	$effect(() => {
-		if (!headingDone) {
-			let i = 0;
-			const interval = setInterval(() => {
-				if (i < headingText.length) {
-					typedHeading = headingText.slice(0, i + 1);
-					i++;
-				} else {
-					clearInterval(interval);
-					headingDone = true;
-					setTimeout(() => { showHeadingCursor = false; showSubtitleCursor = true; }, 400);
-				}
-			}, 45);
-			return () => clearInterval(interval);
-		}
+		if (mounted) return;
+		mounted = true;
+		typedHeading = '';
+		headingDone = false;
+		showHeadingCursor = true;
+		typedSubtitle = '';
+		subtitleDone = false;
+	});
+
+	$effect(() => {
+		if (!mounted || headingDone) return;
+		let i = 0;
+		const interval = setInterval(() => {
+			if (i < headingText.length) {
+				typedHeading = headingText.slice(0, i + 1);
+				i++;
+			} else {
+				clearInterval(interval);
+				headingDone = true;
+				setTimeout(() => { showHeadingCursor = false; showSubtitleCursor = true; }, 400);
+			}
+		}, 45);
+		return () => clearInterval(interval);
 	});
 
 	$effect(() => {
@@ -72,25 +83,35 @@
 			<rect width="100%" height="100%" fill="url(#diag)" />
 		</svg>
 	</div>
-	<!-- Gradient blobs -->
-	<div class="absolute inset-0 -z-10">
-		<div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 dark:from-indigo-950 dark:via-purple-950 dark:to-pink-950 rounded-full blur-3xl opacity-60 -translate-y-1/2"></div>
-		<div class="absolute bottom-0 right-0 w-[400px] h-[400px] bg-gradient-to-tl from-blue-100 to-cyan-50 dark:from-blue-950 dark:to-cyan-950 rounded-full blur-3xl opacity-40 translate-y-1/2"></div>
-		<div class="absolute top-1/2 left-0 w-[300px] h-[300px] bg-gradient-to-tr from-pink-100 to-purple-50 dark:from-pink-950 dark:to-purple-950 rounded-full blur-3xl opacity-30 -translate-x-1/2"></div>
+	<!-- Gradient blobs — reduced blur for faster compositing on low-end devices -->
+	<div class="absolute inset-0 -z-10" aria-hidden="true">
+		<div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 dark:from-indigo-950 dark:via-purple-950 dark:to-pink-950 rounded-full blur-2xl opacity-60 -translate-y-1/2 will-change-transform"></div>
+		<div class="absolute bottom-0 right-0 w-[400px] h-[400px] bg-gradient-to-tl from-blue-100 to-cyan-50 dark:from-blue-950 dark:to-cyan-950 rounded-full blur-2xl opacity-40 translate-y-1/2 will-change-transform"></div>
+		<div class="absolute top-1/2 left-0 w-[300px] h-[300px] bg-gradient-to-tr from-pink-100 to-purple-50 dark:from-pink-950 dark:to-purple-950 rounded-full blur-2xl opacity-30 -translate-x-1/2 will-change-transform"></div>
 	</div>
 
 	<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 		<div class="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] text-center py-20">
 
-			<h1 class="cursor-default text-5xl font-extrabold text-gray-900 dark:text-white sm:text-7xl tracking-tight min-h-[1.2em]">
-				{#if typedHeading.length <= 7}
-					{typedHeading}
-				{:else}
-					{typedHeading.slice(0, 7)}<span class="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">{typedHeading.slice(7)}</span>
-				{/if}{#if showHeadingCursor}<span class="inline-block w-1 h-[1em] bg-gray-800 dark:bg-white animate-pulse ml-1 align-text-bottom"></span>{/if}
+			<h1 class="cursor-default text-5xl font-extrabold text-gray-900 dark:text-white sm:text-7xl tracking-tight relative">
+				<!-- Invisible full text reserves exact space (prevents CLS) -->
+				<span class="invisible select-none" aria-hidden="true">Secure <span>Authentication</span></span>
+				<!-- Visible typewriter overlay -->
+				<span class="absolute inset-0">
+					{#if typedHeading.length <= 7}
+						{typedHeading}
+					{:else}
+						{typedHeading.slice(0, 7)}<span class="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">{typedHeading.slice(7)}</span>
+					{/if}{#if showHeadingCursor}<span class="inline-block w-1 h-[1em] bg-gray-800 dark:bg-white animate-pulse ml-1 align-text-bottom"></span>{/if}
+				</span>
 			</h1>
-			<p class="cursor-default mt-6 text-xl text-gray-500 dark:text-gray-400 max-w-2xl leading-relaxed min-h-[3.5rem]">
-				{typedSubtitle}{#if showSubtitleCursor}<span class="inline-block w-0.5 h-5 bg-gray-400 dark:bg-gray-500 animate-pulse ml-0.5 align-text-bottom"></span>{/if}
+			<p class="cursor-default mt-6 text-xl text-gray-500 dark:text-gray-400 max-w-2xl leading-relaxed relative">
+				<!-- Invisible full text reserves exact space (prevents CLS) -->
+				<span class="invisible select-none" aria-hidden="true">{subtitleText}</span>
+				<!-- Visible typewriter overlay -->
+				<span class="absolute inset-0">
+					{typedSubtitle}{#if showSubtitleCursor}<span class="inline-block w-0.5 h-5 bg-gray-400 dark:bg-gray-500 animate-pulse ml-0.5 align-text-bottom"></span>{/if}
+				</span>
 			</p>
 
 			<!-- Role Selection Cards -->

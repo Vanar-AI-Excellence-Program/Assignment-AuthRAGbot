@@ -10,7 +10,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const { messages, attachedFileName = null } = await request.json();
+  const { messages: rawMessages, attachedFileName = null } = await request.json();
+
+  // Limit conversation history to last 20 messages to reduce memory/token usage
+  const messages = rawMessages.slice(-20);
 
   const apiKey = env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey)
@@ -79,11 +82,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 - When the user asks for code in a specific language, write the code in that exact language.
 - Use inline \`code\` for short references like variable names, commands, or file paths.
 - Add brief comments in code when helpful.
-- Keep code lines reasonably short for readability. Break very long lines when natural.
+- Keep code lines under 60 characters when possible. Break long lines naturally so they are readable on mobile without horizontal scrolling.
 
 ## Tables
 - When presenting tabular or comparative data, always use Markdown tables with proper headers and alignment.
 - After every table, always include a short summary paragraph that highlights key takeaways or explains the data shown in the table. Never end a response immediately after a table.
+- IMPORTANT: Keep tables narrow and mobile-friendly. Maximum 3-4 columns. Use short, concise column headers and cell values.
+- If data has more than 4 columns, split into multiple smaller tables or use a list format instead.
+- Keep cell content brief — use abbreviations or short phrases, not full sentences inside cells.
 - Example format:
   | Column 1 | Column 2 | Column 3 |
   |----------|----------|----------|

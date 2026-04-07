@@ -7,8 +7,13 @@ html {
 	overflow-y: auto;
 }
 
-* {
-	transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+/* Scoped dark-mode transitions — only on elements that actually change.
+   The old `*` rule forced transitions on every element, hurting CLS/LCP. */
+html.dark-transitioning,
+html.dark-transitioning *,
+html.dark-transitioning *::before,
+html.dark-transitioning *::after {
+	transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease !important;
 }
 
 @keyframes slide-in {
@@ -57,35 +62,37 @@ html {
 	animation: mobile-menu-in 0.2s ease-out;
 }
 
+/* Slide-up: uses transform only (no opacity:0 start) to avoid blocking LCP.
+   Content is visible from first paint; transform doesn't cause CLS. */
 @keyframes slide-up {
 	from {
-		opacity: 0;
-		transform: translateY(40px);
+		transform: translateY(20px);
+		opacity: 0.4;
 	}
 	to {
-		opacity: 1;
 		transform: translateY(0);
+		opacity: 1;
 	}
 }
 
 .animate-slide-up {
-	animation: slide-up 0.7s ease-out both;
+	animation: slide-up 0.5s ease-out both;
 }
 
 .animate-slide-up-delay-1 {
-	animation: slide-up 0.7s ease-out 0.15s both;
+	animation: slide-up 0.5s ease-out 0.1s both;
 }
 
 .animate-slide-up-delay-2 {
-	animation: slide-up 0.7s ease-out 0.3s both;
+	animation: slide-up 0.5s ease-out 0.2s both;
 }
 
 .animate-slide-up-delay-3 {
-	animation: slide-up 0.7s ease-out 0.45s both;
+	animation: slide-up 0.5s ease-out 0.3s both;
 }
 
 .animate-slide-up-delay-4 {
-	animation: slide-up 0.7s ease-out 0.6s both;
+	animation: slide-up 0.5s ease-out 0.4s both;
 }
 
 /* Fade in animation */
@@ -226,6 +233,7 @@ html.dark {
 	margin: 0.75rem 0;
 	border-radius: 0.5rem;
 	border: 1px solid #e5e7eb;
+	max-width: 100%;
 }
 
 .dark .prose .table-wrapper {
@@ -233,7 +241,6 @@ html.dark {
 }
 
 .prose table {
-	width: 100%;
 	border-collapse: collapse;
 	font-size: 0.875rem;
 	margin: 0;
@@ -244,15 +251,16 @@ html.dark {
 
 @media (max-width: 640px) {
 	.prose table {
-		font-size: 0.75rem;
+		font-size: 0.7rem;
 	}
 
 	.prose thead th {
-		padding: 0.4rem 0.5rem;
+		padding: 0.3rem 0.4rem;
+		white-space: nowrap;
 	}
 
 	.prose tbody td {
-		padding: 0.35rem 0.5rem;
+		padding: 0.25rem 0.4rem;
 	}
 }
 
@@ -313,8 +321,9 @@ html.dark {
 	border-radius: 0.75rem;
 	margin: 0.75rem 0;
 	border: 1px solid #1e293b;
-	max-width: 100%;
-	min-width: 0;
+	/* Contain width to parent — never push wider */
+	width: 100%;
+	box-sizing: border-box;
 }
 
 .code-block-header {
@@ -336,41 +345,57 @@ html.dark {
 	border-radius: 0 0 0.75rem 0.75rem !important;
 	border: none !important;
 	background: #0f172a !important;
-	padding: 1rem !important;
+	padding: 0.875rem !important;
+	/* Scroll horizontally for long lines — this is the scroll container */
 	overflow-x: auto;
-	max-width: 100%;
+	-webkit-overflow-scrolling: touch;
 }
 
 .code-block-wrapper pre code {
 	font-family: 'Fira Code', 'JetBrains Mono', 'Cascadia Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 	font-size: 0.8rem;
 	line-height: 1.6;
-	color: #e2e8f0 !important;
+	color: #e2e8f0;
 	background: none !important;
 	padding: 0 !important;
 	white-space: pre;
 	word-break: normal;
 	overflow-wrap: normal;
+	display: block;
 }
 
 @media (max-width: 640px) {
 	.code-block-wrapper {
-		margin: 0.5rem -0.5rem;
+		/* Stretch to bubble edges on mobile */
+		margin-left: -0.75rem;
+		margin-right: -0.75rem;
+		/* Use calc so width respects negative margins without overflowing */
+		width: calc(100% + 1.5rem);
 		border-radius: 0.5rem;
 	}
 
 	.code-block-wrapper pre {
-		padding: 0.75rem !important;
+		padding: 0.625rem !important;
 	}
 
 	.code-block-wrapper pre code {
-		font-size: 0.7rem;
-		line-height: 1.5;
+		font-size: 0.65rem;
+		line-height: 1.45;
+		tab-size: 2;
 	}
 
 	.code-block-header {
-		padding: 0.3rem 0.65rem;
-		font-size: 0.625rem;
+		padding: 0.25rem 0.5rem;
+		font-size: 0.6rem;
+		border-radius: 0.5rem 0.5rem 0 0;
+	}
+
+	/* Tables: stretch to bubble edges, scroll internally */
+	.prose .table-wrapper {
+		margin-left: -0.75rem;
+		margin-right: -0.75rem;
+		width: calc(100% + 1.5rem);
+		border-radius: 0.375rem;
 	}
 }
 
@@ -406,5 +431,96 @@ html.dark {
 .dark .prose :not(pre) > code {
 	background: #1e293b;
 	color: #fb923c;
+}
+
+/* ============================================
+   Syntax highlighting — GitHub Dark theme
+   Embedded directly to avoid CDN dependency
+   ============================================ */
+.hljs {
+	color: #c9d1d9;
+	background: #0d1117;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-deletion {
+	color: #ff7b72;
+}
+.hljs-function,
+.hljs-title.function_,
+.hljs-title {
+	color: #d2a8ff;
+}
+.hljs-built_in,
+.hljs-type,
+.hljs-title.class_ {
+	color: #ffa657;
+}
+.hljs-string,
+.hljs-doctag,
+.hljs-addition {
+	color: #a5d6ff;
+}
+.hljs-number,
+.hljs-literal,
+.hljs-variable.constant_ {
+	color: #79c0ff;
+}
+.hljs-regexp {
+	color: #7ee787;
+}
+.hljs-comment {
+	color: #8b949e;
+	font-style: italic;
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable {
+	color: #79c0ff;
+}
+.hljs-params {
+	color: #c9d1d9;
+}
+.hljs-meta,
+.hljs-meta .hljs-keyword {
+	color: #ffa657;
+}
+.hljs-symbol,
+.hljs-bullet {
+	color: #ffa657;
+}
+.hljs-selector-class,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+	color: #7ee787;
+}
+.hljs-tag {
+	color: #7ee787;
+}
+.hljs-name {
+	color: #7ee787;
+}
+.hljs-property {
+	color: #79c0ff;
+}
+.hljs-section {
+	color: #1f6feb;
+	font-weight: bold;
+}
+.hljs-emphasis {
+	font-style: italic;
+}
+.hljs-strong {
+	font-weight: bold;
+}
+.hljs-subst {
+	color: #c9d1d9;
+}
+.hljs-operator {
+	color: #ff7b72;
+}
+.hljs-punctuation {
+	color: #8b949e;
 }
 

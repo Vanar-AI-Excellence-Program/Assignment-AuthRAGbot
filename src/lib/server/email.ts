@@ -8,7 +8,7 @@ function getTransporter(): Promise<nodemailer.Transporter> {
 
 	if (env.SMTP_USER && env.SMTP_PASS) {
 		// Production: use real SMTP credentials
-		console.log('Using real SMTP with user:', env.SMTP_USER);
+		console.log('Using real SMTP (credentials configured)');
 		transporterPromise = Promise.resolve(
 			nodemailer.createTransport({
 				host: env.SMTP_HOST || 'smtp.gmail.com',

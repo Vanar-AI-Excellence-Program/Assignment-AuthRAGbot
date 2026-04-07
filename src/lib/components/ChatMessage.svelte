@@ -2,7 +2,86 @@
 	import { marked } from 'marked';
 	import type { Citation, AttachedFile } from '$lib/chat';
 	import CitationBadge from './CitationBadge.svelte';
-	import hljs from 'highlight.js';
+
+	// Lazy-load highlight.js — only common languages, not all 190+
+	// Reactive state so renderedContent re-computes when hljs finishes loading
+	let hljsInstance = $state<typeof import('highlight.js').default | null>(null);
+	let hljsLoading = false;
+
+	async function loadHljs() {
+		if (hljsInstance || hljsLoading) return hljsInstance;
+		hljsLoading = true;
+		try {
+			const mod = await import('highlight.js/lib/core');
+			const [
+				js, ts, py, bash, json, html, css, sql, java, cpp, c,
+				go, rust, yaml, xml, md, php, ruby, csharp, kotlin, swift
+			] = await Promise.all([
+				import('highlight.js/lib/languages/javascript'),
+				import('highlight.js/lib/languages/typescript'),
+				import('highlight.js/lib/languages/python'),
+				import('highlight.js/lib/languages/bash'),
+				import('highlight.js/lib/languages/json'),
+				import('highlight.js/lib/languages/xml'),
+				import('highlight.js/lib/languages/css'),
+				import('highlight.js/lib/languages/sql'),
+				import('highlight.js/lib/languages/java'),
+				import('highlight.js/lib/languages/cpp'),
+				import('highlight.js/lib/languages/c'),
+				import('highlight.js/lib/languages/go'),
+				import('highlight.js/lib/languages/rust'),
+				import('highlight.js/lib/languages/yaml'),
+				import('highlight.js/lib/languages/xml'),
+				import('highlight.js/lib/languages/markdown'),
+				import('highlight.js/lib/languages/php'),
+				import('highlight.js/lib/languages/ruby'),
+				import('highlight.js/lib/languages/csharp'),
+				import('highlight.js/lib/languages/kotlin'),
+				import('highlight.js/lib/languages/swift')
+			]);
+			const h = mod.default;
+			h.registerLanguage('javascript', js.default);
+			h.registerLanguage('js', js.default);
+			h.registerLanguage('typescript', ts.default);
+			h.registerLanguage('ts', ts.default);
+			h.registerLanguage('python', py.default);
+			h.registerLanguage('py', py.default);
+			h.registerLanguage('bash', bash.default);
+			h.registerLanguage('sh', bash.default);
+			h.registerLanguage('shell', bash.default);
+			h.registerLanguage('zsh', bash.default);
+			h.registerLanguage('json', json.default);
+			h.registerLanguage('html', html.default);
+			h.registerLanguage('xml', xml.default);
+			h.registerLanguage('css', css.default);
+			h.registerLanguage('sql', sql.default);
+			h.registerLanguage('java', java.default);
+			h.registerLanguage('cpp', cpp.default);
+			h.registerLanguage('c', c.default);
+			h.registerLanguage('go', go.default);
+			h.registerLanguage('rust', rust.default);
+			h.registerLanguage('yaml', yaml.default);
+			h.registerLanguage('markdown', md.default);
+			h.registerLanguage('md', md.default);
+			h.registerLanguage('php', php.default);
+			h.registerLanguage('ruby', ruby.default);
+			h.registerLanguage('csharp', csharp.default);
+			h.registerLanguage('cs', csharp.default);
+			h.registerLanguage('kotlin', kotlin.default);
+			h.registerLanguage('swift', swift.default);
+			hljsInstance = h;
+		} catch {
+			// Fallback: hljs stays null, code renders without highlighting
+		} finally {
+			hljsLoading = false;
+		}
+		return hljsInstance;
+	}
+
+	// Pre-load hljs when component mounts (non-blocking)
+	if (typeof window !== 'undefined') {
+		loadHljs();
+	}
 
 	let {
 		role,
@@ -61,17 +140,26 @@
 		return `<div class="table-wrapper">${html}</div>`;
 	};
 
+	// Shared ref updated before each render pass in $derived
+	let _currentHljs: typeof import('highlight.js').default | null = null;
+
 	renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
 		const language = (lang || '').trim().toLowerCase();
 		const displayLang = langNames[language] || language.charAt(0).toUpperCase() + language.slice(1) || 'Code';
 
-		// Use highlight.js for syntax highlighting
+		// Use highlight.js for syntax highlighting (if loaded)
+		const h = _currentHljs;
 		let highlighted: string;
 		try {
-			if (language && hljs.getLanguage(language)) {
-				highlighted = hljs.highlight(text, { language }).value;
+			if (h && language && h.getLanguage(language)) {
+				highlighted = h.highlight(text, { language }).value;
+			} else if (h) {
+				highlighted = h.highlightAuto(text).value;
 			} else {
-				highlighted = hljs.highlightAuto(text).value;
+				highlighted = text
+					.replace(/&/g, '&amp;')
+					.replace(/</g, '&lt;')
+					.replace(/>/g, '&gt;');
 			}
 		} catch {
 			highlighted = text
@@ -94,19 +182,37 @@
 		</div>`;
 	};
 
+	// Sanitize HTML output from marked to prevent XSS via LLM-generated content
+	function sanitizeHtml(html: string): string {
+		return html
+			// Strip <script> tags and contents
+			.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+			// Strip event handler attributes (onclick, onerror, onload, etc.)
+			.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '')
+			// Strip javascript: URIs in href/src/action
+			.replace(/(href|src|action)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*')/gi, '$1=""')
+			// Strip <iframe>, <object>, <embed>, <form>, <input>, <textarea>, <select>
+			.replace(/<\/?(iframe|object|embed|form|input|textarea|select|base|meta|link|style)\b[^>]*>/gi, '')
+			// Strip data: URIs in src (except images which are safe)
+			.replace(/src\s*=\s*(?:"data:(?!image)[^"]*"|'data:(?!image)[^']*')/gi, 'src=""');
+	}
+
 	const renderedContent = $derived.by(() => {
 		if (isUser) return '';
+		// Read reactive state to trigger re-render when hljs loads
+		_currentHljs = hljsInstance;
 		codeBlocks = [];
 		let text = content;
 		const fenceMatches = text.match(/```/g);
 		if (fenceMatches && fenceMatches.length % 2 !== 0) {
 			text += '\n```';
 		}
-		return marked.parse(text, {
+		const raw = marked.parse(text, {
 			gfm: true,
 			breaks: true,
 			renderer
 		}) as string;
+		return sanitizeHtml(raw);
 	});
 
 	function handleBubbleClick(e: MouseEvent) {
@@ -143,7 +249,7 @@
 </script>
 
 <div class="flex {isUser ? 'justify-end' : 'justify-start'} animate-fade-in">
-	<div class="flex items-start gap-2.5 {isUser ? 'flex-row-reverse max-w-[85%] sm:max-w-[75%]' : 'max-w-[95%] sm:max-w-[90%] lg:max-w-[75%]'}">
+	<div class="flex items-start gap-2 sm:gap-2.5 min-w-0 {isUser ? 'flex-row-reverse max-w-[85%] sm:max-w-[75%]' : 'max-w-[88%] sm:max-w-[85%] lg:max-w-[75%]'}">
 		<!-- Avatar -->
 		{#if isUser}
 			{#if userImage}
@@ -240,13 +346,13 @@
 				{/if}
 			</div>
 		{:else}
-			<div class="group">
+			<div class="group min-w-0">
 				<div
-					class="rounded-2xl rounded-tl-sm text-gray-800 dark:text-gray-200 px-4 py-2.5 shadow-sm min-w-0 overflow-x-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+					class="rounded-2xl rounded-tl-sm text-gray-800 dark:text-gray-200 px-3 sm:px-4 py-2.5 shadow-sm min-w-0 overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
 					onclick={handleBubbleClick}
 					role="presentation"
 				>
-					<div class="prose prose-sm dark:prose-invert max-w-none break-words">
+					<div class="prose prose-sm dark:prose-invert max-w-none break-words min-w-0">
 						{@html renderedContent}
 						{#if isStreaming && content}
 							<span class="inline-block w-0.5 h-4 bg-violet-500 animate-pulse ml-0.5 align-text-bottom"></span>

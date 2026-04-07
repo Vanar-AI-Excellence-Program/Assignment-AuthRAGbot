@@ -42,7 +42,8 @@ export const actions: Actions = {
 		});
 
 		if (existingUser) {
-			return fail(400, { error: 'An account with this email already exists.' });
+			// Generic message to prevent email enumeration
+			return fail(400, { error: 'Unable to create account. Please try a different email or sign in.' });
 		}
 
 		const hashedPassword = await bcrypt.hash(password, 12);
