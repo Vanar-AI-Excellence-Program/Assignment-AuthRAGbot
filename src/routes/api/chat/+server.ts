@@ -106,11 +106,27 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 - Do not wrap entire responses in a code block.
 - Respond directly without unnecessary preamble.${ragContext}`;
 
-  const result = streamText({
-    model,
-    system: systemPrompt,
-    messages,
-  });
+  let result;
+  try {
+    result = streamText({
+      model,
+      system: systemPrompt,
+      messages,
+    });
+  } catch (err: any) {
+    const msg = err?.message?.toLowerCase?.() ?? "";
+    const status = err?.status ?? err?.statusCode ?? 0;
+    const isQuota =
+      status === 429 || status === 403 ||
+      msg.includes("quota") || msg.includes("rate limit") ||
+      msg.includes("resource exhausted") || msg.includes("billing") ||
+      msg.includes("exceeded") || msg.includes("token limit");
+
+    if (isQuota) {
+      return new Response("TOKEN_BUDGET_EXHAUSTED", { status: 429 });
+    }
+    return new Response("Failed to generate response", { status: 500 });
+  }
 
   // Create a TransformStream to collect full response and conditionally append citations
   const { readable, writable } = new TransformStream();
@@ -148,8 +164,31 @@ export const POST: RequestHandler = async ({ request, locals }) => {
           );
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Stream error:", err);
+
+      // Detect quota / rate-limit / billing errors from the Gemini API
+      const msg = err?.message?.toLowerCase?.() ?? "";
+      const status = err?.status ?? err?.statusCode ?? 0;
+      const isQuota =
+        status === 429 ||
+        status === 403 ||
+        msg.includes("quota") ||
+        msg.includes("rate limit") ||
+        msg.includes("resource exhausted") ||
+        msg.includes("billing") ||
+        msg.includes("exceeded") ||
+        msg.includes("token limit");
+
+      if (isQuota) {
+        await writer.write(
+          encoder.encode("\n\n<!--ERROR:TOKEN_BUDGET_EXHAUSTED-->")
+        );
+      } else {
+        await writer.write(
+          encoder.encode("\n\n<!--ERROR:STREAM_FAILED-->")
+        );
+      }
     } finally {
       await writer.close();
     }

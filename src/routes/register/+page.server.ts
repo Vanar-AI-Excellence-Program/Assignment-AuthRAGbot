@@ -6,11 +6,12 @@ import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { sendVerificationEmail } from '$lib/server/email';
 import { validatePassword } from '$lib/server/validation';
+import { logAudit, requestMeta } from '$lib/server/audit';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
 export const actions: Actions = {
-	default: async ({ request, cookies, url }) => {
+	default: async ({ request, cookies, url, getClientAddress }) => {
 		const formData = await request.formData();
 		const firstName = (formData.get('firstName') as string)?.trim();
 		const lastName = (formData.get('lastName') as string)?.trim();
@@ -77,21 +78,25 @@ export const actions: Actions = {
 			maxAge: 30 * 24 * 60 * 60
 		});
 
-		const verificationToken = crypto.randomUUID();
-		const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+		const meta = requestMeta(request, getClientAddress);
+		logAudit({ userId: newUser.id, action: 'register', detail: `Registered with email ${email}`, ...meta });
+
+		// Generate a 6-digit verification code
+		const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+		const tokenExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
 		await db.insert(verificationTokens).values({
 			identifier: email,
-			token: verificationToken,
+			token: verificationCode,
 			expires: tokenExpires
 		});
 
 		try {
-			await sendVerificationEmail(email, verificationToken, url.origin);
+			await sendVerificationEmail(email, verificationCode);
 		} catch (e) {
 			console.error('Failed to send verification email:', e);
 		}
 
-		throw redirect(303, '/dashboard?toast=register');
+		throw redirect(303, `/verify-email?email=${encodeURIComponent(email)}`);
 	}
 };

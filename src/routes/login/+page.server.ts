@@ -4,11 +4,12 @@ import { db } from '$lib/server/db';
 import { users, sessions } from '$lib/server/db/schema';
 import { eq, and, lt } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
+import { logAudit, requestMeta } from '$lib/server/audit';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
 export const actions: Actions = {
-	default: async ({ request, cookies }) => {
+	default: async ({ request, cookies, getClientAddress }) => {
 		const formData = await request.formData();
 		const email = (formData.get('email') as string)?.trim().toLowerCase();
 		const password = formData.get('password') as string;
@@ -28,6 +29,8 @@ export const actions: Actions = {
 
 		const isValid = await bcrypt.compare(password, user.password);
 		if (!isValid) {
+			const meta = requestMeta(request, getClientAddress);
+			logAudit({ userId: user.id, action: 'login_failed', detail: 'Invalid password', ...meta });
 			return fail(400, { error: 'Invalid email or password.' });
 		}
 
@@ -66,6 +69,9 @@ export const actions: Actions = {
 			secure: isProduction,
 			maxAge: 30 * 24 * 60 * 60
 		});
+
+		const meta = requestMeta(request, getClientAddress);
+		await logAudit({ userId: user.id, action: 'login', detail: `Logged in as ${role}`, ...meta });
 
 		throw redirect(303, role === 'admin' ? '/admin?toast=login' : '/dashboard?toast=login');
 	}

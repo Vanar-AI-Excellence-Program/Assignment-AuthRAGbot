@@ -88,6 +88,27 @@ export const verificationTokens = pgTable(
 	})
 );
 
+// ─── Audit Log Table ──────────────────────────────────────────
+
+export const auditLogs = pgTable(
+	'audit_logs',
+	{
+		id: text('id')
+			.primaryKey()
+			.$defaultFn(() => crypto.randomUUID()),
+		userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+		action: text('action').notNull(),
+		detail: text('detail'),
+		ipAddress: text('ip_address'),
+		userAgent: text('user_agent'),
+		createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull()
+	},
+	(table) => ({
+		userIdIdx: index('audit_logs_user_id_idx').on(table.userId),
+		createdAtIdx: index('audit_logs_created_at_idx').on(table.createdAt)
+	})
+);
+
 // ─── Conversation / Chat History Tables ────────────────────────
 
 export const conversations = pgTable(

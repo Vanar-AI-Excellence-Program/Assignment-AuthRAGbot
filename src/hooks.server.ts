@@ -1,12 +1,18 @@
-import { handle as authHandle } from '$lib/server/auth';
+import { handle as authHandle, captureRequestMeta } from '$lib/server/auth';
 import { redirect, type Handle } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { db } from '$lib/server/db';
 import { users, sessions } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 
+/** Capture request metadata before Auth.js processes OAuth callbacks. */
+const captureMetaHandle: Handle = async ({ event, resolve }) => {
+	captureRequestMeta(event.request, event.getClientAddress);
+	return resolve(event);
+};
+
 const protectedRoutes: Handle = async ({ event, resolve }) => {
-	const protectedPaths = ['/dashboard', '/profile', '/chat', '/documents'];
+	const protectedPaths = ['/dashboard', '/profile', '/chat', '/documents', '/security'];
 	const adminPaths = ['/admin'];
 	const isProtected = protectedPaths.some((path) => event.url.pathname.startsWith(path));
 	const isAdmin = adminPaths.some((path) => event.url.pathname.startsWith(path));
@@ -36,4 +42,4 @@ const protectedRoutes: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
-export const handle = sequence(authHandle, protectedRoutes);
+export const handle = sequence(captureMetaHandle, authHandle, protectedRoutes);

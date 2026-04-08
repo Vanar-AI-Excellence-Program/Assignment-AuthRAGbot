@@ -1,4 +1,4 @@
-import { fail } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { users, verificationTokens } from '$lib/server/db/schema';
@@ -39,7 +39,7 @@ export const load: PageServerLoad = async (event) => {
 };
 
 export const actions: Actions = {
-	resendVerification: async ({ locals, url }) => {
+	resendVerification: async ({ locals }) => {
 		const session = await locals.auth();
 		if (!session?.user?.email) {
 			return fail(401, { error: 'Not authenticated.' });
@@ -59,20 +59,21 @@ export const actions: Actions = {
 		// Remove existing verification tokens for this email
 		await db.delete(verificationTokens).where(eq(verificationTokens.identifier, email));
 
-		// Generate new token
-		const token = crypto.randomUUID();
-		const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+		// Generate new 6-digit code
+		const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+		const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
 		await db.insert(verificationTokens).values({
 			identifier: email,
-			token,
+			token: verificationCode,
 			expires
 		});
 
 		try {
-			await sendVerificationEmail(email, token, url.origin);
-			return { verificationSent: true };
+			await sendVerificationEmail(email, verificationCode);
+			throw redirect(303, `/verify-email?email=${encodeURIComponent(email)}`);
 		} catch (e) {
+			if (e instanceof Response || (e as any)?.status === 303) throw e;
 			console.error('Failed to send verification email:', e);
 			return fail(500, { error: 'Failed to send verification email. Please try again.' });
 		}

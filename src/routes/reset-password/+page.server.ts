@@ -5,6 +5,7 @@ import { users, verificationTokens } from '$lib/server/db/schema';
 import { eq, and } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { validatePassword } from '$lib/server/validation';
+import { logAudit, requestMeta } from '$lib/server/audit';
 
 export const load: PageServerLoad = async ({ url }) => {
 	const token = url.searchParams.get('token');
@@ -29,7 +30,7 @@ export const load: PageServerLoad = async ({ url }) => {
 };
 
 export const actions: Actions = {
-	default: async ({ request, url }) => {
+	default: async ({ request, url, getClientAddress }) => {
 		const formData = await request.formData();
 		const token = formData.get('token') as string;
 		const email = formData.get('email') as string;
@@ -72,6 +73,13 @@ export const actions: Actions = {
 				eq(verificationTokens.token, token)
 			)
 		);
+
+		// Log the password reset
+		const resetUser = await db.query.users.findFirst({ where: eq(users.email, email) });
+		if (resetUser) {
+			const meta = requestMeta(request, getClientAddress);
+			logAudit({ userId: resetUser.id, action: 'password_reset_completed', ...meta });
+		}
 
 		throw redirect(303, '/login?reset=success');
 	}

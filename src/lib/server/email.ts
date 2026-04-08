@@ -39,24 +39,23 @@ function getTransporter(): Promise<nodemailer.Transporter> {
 	return transporterPromise;
 }
 
-export async function sendVerificationEmail(email: string, token: string, origin: string) {
-	const verifyLink = `${origin}/verify-email?token=${token}&email=${encodeURIComponent(email)}`;
+export async function sendVerificationEmail(email: string, code: string) {
 	const transporter = await getTransporter();
 
 	const info = await transporter.sendMail({
 		from: env.SMTP_FROM || 'Passly <noreply@passly.com>',
 		to: email,
-		subject: 'Verify your email - Passly',
+		subject: 'Your verification code - Passly',
 		html: `
 			<div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
 				<h2 style="color: #1f2937; text-align: center;">Verify your email address</h2>
-				<p style="color: #6b7280; text-align: center;">Click the button below to verify your email address and activate your account.</p>
+				<p style="color: #6b7280; text-align: center;">Enter the following code to verify your email address and activate your account.</p>
 				<div style="text-align: center; margin: 32px 0;">
-					<a href="${verifyLink}" style="background-color: #4f46e5; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">
-						Verify Email
-					</a>
+					<div style="display: inline-block; background-color: #f3f4f6; border: 2px dashed #4f46e5; border-radius: 12px; padding: 16px 40px;">
+						<span style="font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #4f46e5; font-family: monospace;">${code}</span>
+					</div>
 				</div>
-				<p style="color: #9ca3af; font-size: 13px; text-align: center;">This link expires in 24 hours. If you didn't create an account, you can ignore this email.</p>
+				<p style="color: #9ca3af; font-size: 13px; text-align: center;">This code expires in 10 minutes. If you didn't create an account, you can ignore this email.</p>
 			</div>
 		`
 	});

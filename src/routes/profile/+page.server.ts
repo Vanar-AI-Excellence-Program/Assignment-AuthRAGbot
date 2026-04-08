@@ -5,6 +5,7 @@ import { users } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { validatePassword } from '$lib/server/validation';
+import { logAudit, requestMeta } from '$lib/server/audit';
 
 export const load: PageServerLoad = async (event) => {
 	const session = await event.locals.auth();
@@ -33,7 +34,7 @@ export const load: PageServerLoad = async (event) => {
 };
 
 export const actions: Actions = {
-	updateProfile: async ({ request, locals }) => {
+	updateProfile: async ({ request, locals, getClientAddress }) => {
 		const session = await locals.auth();
 		if (!session?.user?.id) {
 			return fail(401, { error: 'Not authenticated.' });
@@ -72,10 +73,13 @@ export const actions: Actions = {
 			.set({ firstName, lastName, name: fullName, phone, bio, location })
 			.where(eq(users.id, session.user.id));
 
+		const meta = requestMeta(request, getClientAddress);
+		logAudit({ userId: session.user.id, action: 'profile_updated', ...meta });
+
 		return { profileSuccess: true };
 	},
 
-	changePassword: async ({ request, locals }) => {
+	changePassword: async ({ request, locals, getClientAddress }) => {
 		const session = await locals.auth();
 		if (!session?.user?.id) {
 			return fail(401, { error: 'Not authenticated.' });
@@ -127,6 +131,9 @@ export const actions: Actions = {
 			.update(users)
 			.set({ password: hashedPassword })
 			.where(eq(users.id, session.user.id));
+
+		const meta = requestMeta(request, getClientAddress);
+		logAudit({ userId: session.user.id, action: 'password_changed', ...meta });
 
 		return { passwordSuccess: true };
 	}

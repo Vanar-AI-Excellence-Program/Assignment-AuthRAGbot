@@ -27,6 +27,7 @@
 	let input = $state('');
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
+	let tokenBudgetExhausted = $state(false);
 	let provider = $state('gemini');
 	let isClearing = $state(false);
 	let chatContainer = $state<HTMLDivElement | undefined>(undefined);
@@ -64,10 +65,8 @@
 
 	let chatMounted = $state(false);
 	let typedText = $state('');
-	let showCursor = $state(false);
 	let typewriterDone = $state(true);
 	let typedSubtext = $state('');
-	let showSubCursor = $state(false);
 	let subtitleDone = $state(true);
 
 	// Initialize full text for SSR, reset on client mount
@@ -77,7 +76,6 @@
 		if (!hasMessages) {
 			typedText = '';
 			typewriterDone = false;
-			showCursor = true;
 			typedSubtext = '';
 			subtitleDone = false;
 		}
@@ -94,27 +92,24 @@
 			} else {
 				clearInterval(interval);
 				typewriterDone = true;
-				setTimeout(() => { showCursor = false; showSubCursor = true; }, 500);
 			}
 		}, 50);
 		return () => clearInterval(interval);
 	});
 
 	$effect(() => {
-		if (typewriterDone && !subtitleDone && showSubCursor) {
-			let i = 0;
-			const interval = setInterval(() => {
-				if (i < subtitleText.length) {
-					typedSubtext = subtitleText.slice(0, i + 1);
-					i++;
-				} else {
-					clearInterval(interval);
-					subtitleDone = true;
-					setTimeout(() => { showSubCursor = false; }, 1000);
-				}
-			}, 25);
-			return () => clearInterval(interval);
-		}
+		if (!typewriterDone || subtitleDone) return;
+		let i = 0;
+		const interval = setInterval(() => {
+			if (i < subtitleText.length) {
+				typedSubtext = subtitleText.slice(0, i + 1);
+				i++;
+			} else {
+				clearInterval(interval);
+				subtitleDone = true;
+			}
+		}, 25);
+		return () => clearInterval(interval);
 	});
 
 
@@ -138,6 +133,7 @@
 	function startNewChat() {
 		isClearing = true;
 		error = null;
+		tokenBudgetExhausted = false;
 		currentConversationId = null;
 		showAllMessages = false;
 		setTimeout(() => {
@@ -184,6 +180,7 @@
 		// Create a new assistant node
 		isLoading = true;
 		error = null;
+		tokenBudgetExhausted = false;
 		shouldScrollToBottom = true;
 
 		const assistantNode = attachChild(userNode, createNode('assistant', ''));
@@ -204,6 +201,9 @@
 			});
 
 			if (!response.ok) {
+				if (response.status === 429) {
+					throw new Error('TOKEN_BUDGET_EXHAUSTED');
+				}
 				throw new Error(
 					response.status === 401
 						? 'Please sign in to use chat.'
@@ -221,6 +221,16 @@
 				if (done) break;
 				assistantNode.content += decoder.decode(value, { stream: true });
 				scrollToBottom();
+			}
+
+			// Check for in-stream error markers
+			if (assistantNode.content.includes('<!--ERROR:TOKEN_BUDGET_EXHAUSTED-->')) {
+				assistantNode.content = assistantNode.content.replace('<!--ERROR:TOKEN_BUDGET_EXHAUSTED-->', '').trimEnd();
+				throw new Error('TOKEN_BUDGET_EXHAUSTED');
+			}
+			if (assistantNode.content.includes('<!--ERROR:STREAM_FAILED-->')) {
+				assistantNode.content = assistantNode.content.replace('<!--ERROR:STREAM_FAILED-->', '').trimEnd();
+				throw new Error('The response was interrupted. Please try again.');
 			}
 
 			const { cleanContent, citations } = parseCitations(assistantNode.content);
@@ -255,7 +265,13 @@
 				if (assistantDbId) assistantNode.dbId = assistantDbId;
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Something went wrong';
+			const msg = e instanceof Error ? e.message : 'Something went wrong';
+			if (msg === 'TOKEN_BUDGET_EXHAUSTED') {
+				tokenBudgetExhausted = true;
+				error = null;
+			} else {
+				error = msg;
+			}
 			userNode.children = userNode.children.filter((c) => c.id !== assistantNode.id);
 		} finally {
 			isLoading = false;
@@ -358,6 +374,7 @@
 		attachedFile = null;
 		isLoading = true;
 		error = null;
+		tokenBudgetExhausted = false;
 		shouldScrollToBottom = true;
 
 		const assistantNodeData = createNode('assistant', '');
@@ -406,6 +423,9 @@
 			});
 
 			if (!response.ok) {
+				if (response.status === 429) {
+					throw new Error('TOKEN_BUDGET_EXHAUSTED');
+				}
 				throw new Error(
 					response.status === 401
 						? 'Please sign in to use chat.'
@@ -427,6 +447,16 @@
 				scrollToBottom();
 			}
 
+			// Check for in-stream error markers
+			if (assistantNode.content.includes('<!--ERROR:TOKEN_BUDGET_EXHAUSTED-->')) {
+				assistantNode.content = assistantNode.content.replace('<!--ERROR:TOKEN_BUDGET_EXHAUSTED-->', '').trimEnd();
+				throw new Error('TOKEN_BUDGET_EXHAUSTED');
+			}
+			if (assistantNode.content.includes('<!--ERROR:STREAM_FAILED-->')) {
+				assistantNode.content = assistantNode.content.replace('<!--ERROR:STREAM_FAILED-->', '').trimEnd();
+				throw new Error('The response was interrupted. Please try again.');
+			}
+
 			// Parse citations from stream
 			const { cleanContent, citations } = parseCitations(assistantNode.content);
 			assistantNode.content = cleanContent;
@@ -446,7 +476,13 @@
 				if (assistantDbId) assistantNode.dbId = assistantDbId;
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Something went wrong';
+			const msg = e instanceof Error ? e.message : 'Something went wrong';
+			if (msg === 'TOKEN_BUDGET_EXHAUSTED') {
+				tokenBudgetExhausted = true;
+				error = null;
+			} else {
+				error = msg;
+			}
 			userNode.children = userNode.children.filter((c) => c.id !== assistantNode.id);
 		} finally {
 			isLoading = false;
@@ -546,15 +582,12 @@
 										{typedText.slice(0, typedText.indexOf('Pascal'))}<span class="text-blue-600 dark:text-blue-400">Pascal</span>
 									{:else}
 										{typedText}
-									{/if}{#if showCursor}<span class="inline-block w-0.5 h-6 bg-gray-800 dark:bg-white animate-pulse ml-0.5 align-text-bottom"></span>{/if}
+									{/if}
 								</span>
 							</h2>
 							<p class="text-sm text-gray-500 dark:text-gray-400 max-w-md mb-1 relative">
-								<!-- Invisible full text reserves space (prevents CLS) -->
 								<span class="invisible select-none" aria-hidden="true">{subtitleText}</span>
-								<span class="absolute inset-0">
-									{typedSubtext}{#if showSubCursor}<span class="inline-block w-0.5 h-4 bg-gray-400 dark:bg-gray-500 animate-pulse ml-0.5 align-text-bottom"></span>{/if}
-								</span>
+								<span class="absolute inset-0">{typedSubtext}</span>
 							</p>
 							<p class="text-xs text-gray-400 dark:text-gray-500 mb-7">
 								Pick a topic below or type your own message to get started.
@@ -637,6 +670,32 @@
 							/>
 						{/if}
 					{/each}
+
+					<!-- Token Budget Exhausted Warning -->
+					{#if tokenBudgetExhausted}
+						<div class="animate-scale-in flex justify-center">
+							<div class="bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 text-sm rounded-2xl p-5 border border-amber-200 dark:border-amber-800/60 max-w-lg w-full shadow-sm">
+								<div class="flex items-start gap-3">
+									<div class="w-10 h-10 bg-amber-100 dark:bg-amber-900/40 rounded-xl flex items-center justify-center flex-shrink-0">
+										<svg class="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+										</svg>
+									</div>
+									<div class="flex-1">
+										<p class="font-semibold text-amber-900 dark:text-amber-100">Token budget exhausted</p>
+										<p class="mt-1 text-xs text-amber-700 dark:text-amber-300/80 leading-relaxed">
+											The AI model's free-tier token quota has been reached. Pascal is temporarily unavailable. Please try again later or contact the administrator.
+										</p>
+									</div>
+									<button aria-label="Dismiss" onclick={() => (tokenBudgetExhausted = false)} class="text-amber-400 hover:text-amber-600 dark:hover:text-amber-300 flex-shrink-0 mt-0.5">
+										<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+										</svg>
+									</button>
+								</div>
+							</div>
+						</div>
+					{/if}
 
 					<!-- Error -->
 					{#if error}

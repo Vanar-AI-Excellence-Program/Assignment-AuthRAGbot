@@ -68,7 +68,7 @@
 				</div>
 				<div>
 					<p class="text-sm font-semibold text-amber-800 dark:text-amber-300">Verify your email address</p>
-					<p class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">Check your inbox for a verification link or resend it now.</p>
+					<p class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">Verify your email with a one-time code to secure your account.</p>
 				</div>
 			</div>
 			{#if form?.verificationSent}
@@ -95,7 +95,7 @@
 						disabled={resending}
 						class="text-sm font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 hover:bg-amber-200 dark:hover:bg-amber-900/60 px-5 py-2 rounded-xl transition-all disabled:opacity-50 hover:shadow-md"
 					>
-						{resending ? 'Sending...' : 'Send Verification Link'}
+						{resending ? 'Sending...' : 'Verify Now'}
 					</button>
 				</form>
 			{/if}

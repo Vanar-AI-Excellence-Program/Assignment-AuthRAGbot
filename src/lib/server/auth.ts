@@ -7,6 +7,34 @@ import { db } from './db';
 import { users, sessions, accounts, verificationTokens } from './db/schema';
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
+import { logAudit } from './audit';
+
+// Holds request metadata for the current OAuth callback so the
+// signIn event (which has no access to the request) can log it.
+let _oauthRequestMeta: { ipAddress: string | null; userAgent: string | null } = {
+	ipAddress: null,
+	userAgent: null
+};
+
+/** Called from hooks.server.ts before the auth handle runs. */
+export function captureRequestMeta(request: Request, getClientAddress?: () => string) {
+	let ip =
+		request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+		request.headers.get('x-real-ip') ||
+		null;
+
+	if (!ip && getClientAddress) {
+		try { ip = getClientAddress(); } catch {}
+	}
+
+	if (ip === '::1' || ip === '::ffff:127.0.0.1') ip = '127.0.0.1';
+	else if (ip?.startsWith('::ffff:')) ip = ip.slice(7);
+
+	_oauthRequestMeta = {
+		ipAddress: ip,
+		userAgent: request.headers.get('user-agent') || null
+	};
+}
 
 export const { handle, signIn, signOut } = SvelteKitAuth({
 	adapter: DrizzleAdapter(db, {
@@ -63,7 +91,7 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
 			}
 			return session;
 		},
-		async signIn({ user }) {
+		async signIn({ user, account }) {
 			if (user?.id) {
 				const dbUser = await db.query.users.findFirst({
 					where: eq(users.id, user.id)
@@ -72,6 +100,18 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
 					return false;
 				}
 			}
+
+			// Log OAuth sign-ins (credentials logins are logged in the login route)
+			if (account?.provider && account.provider !== 'credentials' && user?.id) {
+				const provider = account.provider.charAt(0).toUpperCase() + account.provider.slice(1);
+				await logAudit({
+					userId: user.id,
+					action: 'login',
+					detail: `Signed in with ${provider}`,
+					..._oauthRequestMeta
+				});
+			}
+
 			return true;
 		},
 		async redirect({ url, baseUrl }) {

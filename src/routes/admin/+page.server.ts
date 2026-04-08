@@ -3,6 +3,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { users, sessions } from '$lib/server/db/schema';
 import { eq, desc, count, gt } from 'drizzle-orm';
+import { logAudit, requestMeta } from '$lib/server/audit';
 
 export const load: PageServerLoad = async (event) => {
 	const session = await event.locals.auth();
@@ -45,7 +46,7 @@ export const load: PageServerLoad = async (event) => {
 };
 
 export const actions: Actions = {
-	deleteUser: async ({ request, locals }) => {
+	deleteUser: async ({ request, locals, getClientAddress }) => {
 		const session = await locals.auth();
 		if (!session?.user?.id) return fail(401, { error: 'Not authenticated.' });
 		if ((session.user as { role?: string }).role !== 'admin') return fail(403, { error: 'Admin access required.' });
@@ -56,13 +57,16 @@ export const actions: Actions = {
 		if (!userId) return fail(400, { error: 'User ID is required.' });
 		if (userId === session.user.id) return fail(400, { error: 'You cannot delete yourself.' });
 
+		const meta = requestMeta(request, getClientAddress);
+		logAudit({ userId: session.user.id, action: 'account_deleted', detail: `Deleted user ${userId}`, ...meta });
+
 		await db.delete(sessions).where(eq(sessions.userId, userId));
 		await db.delete(users).where(eq(users.id, userId));
 
 		return { success: true };
 	},
 
-	toggleActive: async ({ request, locals }) => {
+	toggleActive: async ({ request, locals, getClientAddress }) => {
 		const session = await locals.auth();
 		if (!session?.user?.id) return fail(401, { error: 'Not authenticated.' });
 		if ((session.user as { role?: string }).role !== 'admin') return fail(403, { error: 'Admin access required.' });
@@ -79,12 +83,21 @@ export const actions: Actions = {
 
 		if (!user) return fail(404, { error: 'User not found.' });
 
-		await db.update(users).set({ active: !user.active }).where(eq(users.id, userId));
+		const newActive = !user.active;
+		await db.update(users).set({ active: newActive }).where(eq(users.id, userId));
+
+		const meta = requestMeta(request, getClientAddress);
+		logAudit({
+			userId: session.user.id,
+			action: newActive ? 'account_activated' : 'account_deactivated',
+			detail: `${newActive ? 'Activated' : 'Deactivated'} user ${userId}`,
+			...meta
+		});
 
 		return { success: true };
 	},
 
-	toggleRole: async ({ request, locals }) => {
+	toggleRole: async ({ request, locals, getClientAddress }) => {
 		const session = await locals.auth();
 		if (!session?.user?.id) return fail(401, { error: 'Not authenticated.' });
 		if ((session.user as { role?: string }).role !== 'admin') return fail(403, { error: 'Admin access required.' });
@@ -103,6 +116,9 @@ export const actions: Actions = {
 
 		const newRole = user.role === 'admin' ? 'user' : 'admin';
 		await db.update(users).set({ role: newRole }).where(eq(users.id, userId));
+
+		const meta = requestMeta(request, getClientAddress);
+		logAudit({ userId: session.user.id, action: 'role_changed', detail: `Changed user ${userId} role to ${newRole}`, ...meta });
 
 		return { success: true };
 	}

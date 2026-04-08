@@ -1,6 +1,6 @@
 # Passly - Full-Stack Authentication System with RAG-Powered AI Chat
 
-A modern, production-ready authentication application built with **SvelteKit 5**, **Tailwind CSS**, **Drizzle ORM**, and **PostgreSQL (pgvector)**. Features a polished blue & violet themed UI with dark mode, role-based access control, complete user management, and **Pascal** — an AI-powered chat assistant powered by **Google Gemini**, enhanced by **Retrieval-Augmented Generation (RAG)** for document-grounded answers.
+A modern, production-ready authentication application built with **SvelteKit 5**, **Tailwind CSS**, **Drizzle ORM**, and **PostgreSQL (pgvector)**. Features a polished blue & violet themed UI with dark mode, role-based access control, complete user management, audit logging, and **Pascal** — an AI-powered chat assistant powered by **Google Gemini**, enhanced by **Retrieval-Augmented Generation (RAG)** for document-grounded answers.
 
 ---
 
@@ -10,7 +10,7 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 - **Email & Password** sign-up/sign-in with bcrypt hashing (salt 12)
 - **OAuth integration** with Google and GitHub via Auth.js
 - **Database sessions** with 30-day lifetime and httpOnly cookies
-- **Email verification** with 24-hour token expiry and resend capability
+- **TOTP email verification** — 6-digit one-time code sent via email with 10-minute expiry, OTP input UI with auto-focus and paste support
 - **Password reset** via email with 1-hour secure tokens
 - **Password validation** — minimum 8 characters, uppercase, lowercase, and number required
 
@@ -21,6 +21,20 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 - OAuth users can set a password to enable dual login
 - Account metadata display (User ID, join date, auth method)
 
+### Security & Audit Logging
+- **Audit log** for all security-relevant account activity
+- Tracked events: sign-in, failed sign-in, sign-out, registration, email verification, profile update, password change, password reset request/completion, account activation/deactivation, account deletion, role change
+- Logs capture **IP address** (with IPv6-to-IPv4 normalization) and **user agent** for each event
+- **IP resolution** — uses `x-forwarded-for` / `x-real-ip` headers in production, falls back to SvelteKit's `getClientAddress()` for local development
+- **Security Activity page** (`/security`) — users can view their own recent activity with:
+  - Color-coded event types with distinct icons
+  - **Browser & device detection** — parses user-agent to show browser name (Chrome, Firefox, Safari, Edge, Opera) and OS (Windows, macOS, Linux, Android, iOS)
+  - Device-type icons (desktop vs mobile)
+  - Client **IP address** displayed per event
+  - Relative timestamps with full date on hover
+- Audit logging is awaited before redirects (login/logout) to guarantee delivery
+- Accessible from the Profile page via a dedicated "Security Activity" card
+
 ### Admin Panel
 - Role-based access — only admins can access `/admin`
 - **User management** — view all users with search/filter
@@ -30,10 +44,12 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 - **Stats dashboard** — total users, active sessions, verified emails, admin count
 - Progress bars showing proportional metrics
 - **Secure admin registration** — public registration creates regular users only. Admins can only be created by existing admins.
+- All admin actions (delete, activate/deactivate, role change) are recorded in the audit log
 
 ### Pascal — AI Chat Assistant
 - **Google Gemini 2.5 Flash** powered conversational AI
 - Real-time **streaming responses** for instant feedback
+- **Token budget warning** — detects Gemini API quota/rate-limit exhaustion (HTTP 429, 403, and in-stream errors) and displays a dedicated amber warning banner instead of a generic error
 - **Regenerate response** — re-generate any assistant message with one click; the existing DB record is updated in-place
 - **Personalized welcome** — greets users by name with suggested prompts
 - **Conversation persistence** — chats saved to database, accessible across sessions
@@ -61,6 +77,13 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 - **Smart citation display** — citations only appear when the LLM actually uses document content in its response; casual conversation remains citation-free
 - **Per-user isolation** — each user's documents are scoped to their account
 - **Status tracking** — documents show processing/ready/error status with chunk counts
+
+### Landing Page
+- **Production-quality design** with multiple sections: hero, role selection, features grid, how-it-works steps, tech stack badges, CTA banner, and footer
+- **Typewriter animation** on heading and subtitle text (no cursor, clean reveal)
+- Trust indicators showing encryption standard, OAuth support, and TOTP verification
+- Responsive layout optimized for mobile, tablet, and desktop
+- Lightweight — no heavy blur, no JS scroll observers, CSS-only animations
 
 ### UI/UX
 - **Blue & violet** color theme with orange accents and dark mode support
@@ -118,7 +141,8 @@ A modern, production-ready authentication application built with **SvelteKit 5**
    ┌────┴──────────────┴─────────────────┴────┐
    │        PostgreSQL 16 + pgvector          │
    │  (users, sessions, conversations,        │
-   │   messages, documents, chunks)            │
+   │   messages, documents, chunks,           │
+   │   audit_logs)                            │
    └──────────────────────────────────────────┘
                                     │
                          ┌──────────┴──────────┐
@@ -157,7 +181,8 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 │   │   │   └── DocumentUpload.svelte   # Drag-and-drop file upload
 │   │   └── server/
 │   │       ├── auth.ts                 # Auth.js config (providers, callbacks)
-│   │       ├── email.ts                # Nodemailer email service
+│   │       ├── audit.ts                # Audit log helper (fire-and-forget logging)
+│   │       ├── email.ts                # Nodemailer email service (TOTP codes + password reset)
 │   │       ├── validation.ts           # Password validation rules
 │   │       ├── chunker.ts              # Recursive text chunking for RAG
 │   │       ├── embedding.ts            # Embedding service API client
@@ -168,23 +193,24 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 │   └── routes/
 │       ├── +layout.svelte              # Navbar, toast system, theme toggle
 │       ├── +layout.server.ts           # Session + role loading
-│       ├── +page.svelte                # Landing page with hero & features
+│       ├── +page.svelte                # Landing page (hero, features, how-it-works, tech stack, CTA, footer)
 │       ├── login/                      # Sign-in (credentials + OAuth)
-│       ├── register/                   # Sign-up with email verification
+│       ├── register/                   # Sign-up with TOTP email verification
 │       ├── dashboard/                  # User dashboard with stats
 │       ├── profile/                    # Profile settings (name, phone, bio, etc.)
+│       ├── security/                   # Security activity log (audit trail)
 │       ├── admin/                      # Admin panel with user management
 │       ├── chat/                       # Pascal AI chat interface
 │       ├── documents/                  # Knowledge base management
 │       ├── api/
-│       │   ├── chat/                   # Streaming AI chat endpoint (with RAG)
+│       │   ├── chat/                   # Streaming AI chat endpoint (with RAG + quota detection)
 │       │   ├── conversations/          # CRUD for conversations & messages
 │       │   └── documents/              # Upload, list, delete documents
 │       ├── healthz/                    # Health check endpoint
 │       ├── version/                    # App version endpoint
 │       ├── forgot-password/            # Password reset request
 │       ├── reset-password/             # Password reset form
-│       ├── verify-email/               # Email verification handler
+│       ├── verify-email/               # TOTP code verification page
 │       └── logout/                     # Session cleanup + redirect
 ```
 
@@ -210,6 +236,18 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 | `active` | boolean | Account enabled/disabled (default: `true`) |
 | `role` | text | `user` or `admin` (default: `user`) |
 | `created_at` | timestamp | Account creation date |
+
+### Audit Logs Table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | UUID | Primary key (auto-generated) |
+| `user_id` | text | Foreign key → users (cascade delete) |
+| `action` | text | Event type (e.g. `login`, `password_changed`) |
+| `detail` | text | Additional context (nullable) |
+| `ip_address` | text | Client IP address (nullable) |
+| `user_agent` | text | Client user agent (nullable) |
+| `created_at` | timestamp | Event timestamp |
 
 ### Conversations Table
 
@@ -262,7 +300,7 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 ### Other Tables
 - **accounts** — OAuth provider links (Google, GitHub)
 - **sessions** — Active database sessions with expiry
-- **verification_tokens** — Email verification and password reset tokens
+- **verification_tokens** — Email verification (6-digit TOTP codes) and password reset tokens
 
 ---
 
@@ -451,6 +489,7 @@ The Retrieval-Augmented Generation pipeline works as follows:
 | `/healthz`, `/version` | Public |
 | `/dashboard` | Authenticated users only |
 | `/profile` | Authenticated users only |
+| `/security` | Authenticated users only |
 | `/chat` (Pascal) | Authenticated users only |
 | `/documents` | Authenticated users only |
 | `/admin` | Admin role only |
@@ -482,8 +521,11 @@ Route protection is enforced in `src/hooks.server.ts`. Unauthenticated users are
 - Sessions stored in database with **httpOnly** cookies
 - CSRF protection via **Auth.js**
 - Route-level protection in **server hooks**
-- Token-based email verification and password reset
+- **TOTP email verification** — 6-digit codes with 10-minute expiry (replaces link-based verification)
+- Token-based password reset
+- **Audit logging** — all security-relevant events (login, logout, password changes, admin actions) logged with IP address, user agent, browser, and device; awaited before redirects to guarantee delivery; IPv6 loopback normalized to `127.0.0.1`
 - Input validation on all server actions
 - Chat and document API endpoints independently verify authentication
 - Per-user document isolation — users can only access their own documents
 - Deactivated accounts have all sessions purged on next request
+- **Token budget detection** — Gemini API quota exhaustion is caught and surfaced to users instead of failing silently
