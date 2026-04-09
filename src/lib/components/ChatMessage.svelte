@@ -197,12 +197,9 @@
 			.replace(/src\s*=\s*(?:"data:(?!image)[^"]*"|'data:(?!image)[^']*')/gi, 'src=""');
 	}
 
-	const renderedContent = $derived.by(() => {
-		if (isUser) return '';
-		// Read reactive state to trigger re-render when hljs loads
+	function renderMarkdown(text: string): string {
 		_currentHljs = hljsInstance;
 		codeBlocks = [];
-		let text = content;
 		const fenceMatches = text.match(/```/g);
 		if (fenceMatches && fenceMatches.length % 2 !== 0) {
 			text += '\n```';
@@ -213,6 +210,15 @@
 			renderer
 		}) as string;
 		return sanitizeHtml(raw);
+	}
+
+	// During streaming the template shows raw text, so we return '' (cheap, no parsing).
+	// When not streaming, render full markdown. Svelte only tracks deps actually read
+	// per run, so during streaming this won't re-run on every content chunk.
+	const renderedContent = $derived.by(() => {
+		if (isUser || isStreaming) return '';
+		void hljsInstance;
+		return renderMarkdown(content);
 	});
 
 	function handleBubbleClick(e: MouseEvent) {
@@ -353,9 +359,10 @@
 					role="presentation"
 				>
 					<div class="prose prose-sm dark:prose-invert max-w-none break-words min-w-0">
-						{@html renderedContent}
-						{#if isStreaming && content}
-							<span class="inline-block w-0.5 h-4 bg-violet-500 animate-pulse ml-0.5 align-text-bottom"></span>
+						{#if isStreaming}
+							<p class="whitespace-pre-wrap">{content}<span class="inline-block w-0.5 h-4 bg-violet-500 animate-pulse ml-0.5 align-text-bottom"></span></p>
+						{:else}
+							{@html renderedContent}
 						{/if}
 					</div>
 				</div>

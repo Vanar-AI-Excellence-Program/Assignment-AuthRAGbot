@@ -23,17 +23,17 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 
 ### Security & Audit Logging
 - **Audit log** for all security-relevant account activity
-- Tracked events: sign-in, failed sign-in, sign-out, registration, email verification, profile update, password change, password reset request/completion, account activation/deactivation, account deletion, role change
+- Tracked events: sign-in, failed sign-in, sign-out, registration, email verification, profile update, password change, password reset request/completion, account activation/deactivation, account deletion, role change, document uploaded, document deleted
 - Logs capture **IP address** (with IPv6-to-IPv4 normalization) and **user agent** for each event
 - **IP resolution** — uses `x-forwarded-for` / `x-real-ip` headers in production, falls back to SvelteKit's `getClientAddress()` for local development
-- **Security Activity page** (`/security`) — users can view their own recent activity with:
+- **Recent Activity page** (`/security`) — users can view their own recent activity with:
   - Color-coded event types with distinct icons
   - **Browser & device detection** — parses user-agent to show browser name (Chrome, Firefox, Safari, Edge, Opera) and OS (Windows, macOS, Linux, Android, iOS)
   - Device-type icons (desktop vs mobile)
   - Client **IP address** displayed per event
   - Relative timestamps with full date on hover
 - Audit logging is awaited before redirects (login/logout) to guarantee delivery
-- Accessible from the Profile page via a dedicated "Security Activity" card
+- Accessible from the Profile page via a dedicated "Recent Activity" card and from the Dashboard Quick Actions
 
 ### Admin Panel
 - Role-based access — only admins can access `/admin`
@@ -48,8 +48,9 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 
 ### Pascal — AI Chat Assistant
 - **Google Gemini 2.5 Flash** powered conversational AI
-- Real-time **streaming responses** for instant feedback
-- **Token budget warning** — detects Gemini API quota/rate-limit exhaustion (HTTP 429, 403, and in-stream errors) and displays a dedicated amber warning banner instead of a generic error
+- Real-time **streaming responses** with smooth typing feel — raw text displayed during streaming, full markdown rendered on completion for zero-lag UX
+- **Token budget warning** — multi-layer quota detection (server-side cached check, in-stream error markers, client-side timeout with `Promise.race`, empty response detection) surfaces Gemini API exhaustion as a floating toast popup and inline chat notice; input is disabled while quota is reached
+- **Graceful stream interruption** — partial responses are preserved with a "Response interrupted" note instead of being discarded; users can regenerate to retry
 - **Regenerate response** — re-generate any assistant message with one click; the existing DB record is updated in-place
 - **Personalized welcome** — greets users by name with suggested prompts
 - **Conversation persistence** — chats saved to database, accessible across sessions
@@ -58,9 +59,9 @@ A modern, production-ready authentication application built with **SvelteKit 5**
 - **File attachment UX** — uploaded documents appear as a chip above the input area; the chip persists across messages until manually dismissed, and displays inline in each sent message that used it. Attachment metadata is saved to the database, so file indicators remain visible on messages after page reload
 - **Copy, Edit & Regenerate** buttons on messages (always visible on mobile, hover-reveal on desktop)
 - **Separated input controls** — send and attach buttons sit outside the input border for a cleaner look
-- **Markdown rendering** — code blocks with syntax highlighting (highlight.js), tables, lists, and formatted text via `marked` and Tailwind Typography
+- **Markdown rendering** — code blocks with syntax highlighting (highlight.js), tables, lists, and formatted text via `marked` and Tailwind Typography; styled bullet points (indigo dots for `ul`, numbered badges for `ol`) with nested list differentiation
 - **Mobile-optimized rendering** — code blocks and tables scroll horizontally within their container on small screens instead of breaking the page layout; reduced font sizes and padding on mobile for better readability
-- **Prompt engineering** — system prompt ensures properly formatted responses with fenced code blocks, markdown tables, and structured output
+- **Prompt engineering** — concise system prompt with friendly Pascal personality (occasional emojis), brevity-first instruction ("2-4 sentences for simple questions"), and compact formatting rules for fenced code blocks, markdown tables, and structured output
 - **Reusable modules** — chat tree logic extracted to `src/lib/chat.ts`; `ChatMessage`, `ChatSidebar`, and `ChatInput` components encapsulate UI
 - **Loading states** — animated typing indicator while AI is generating
 - **Error handling** — user-friendly error messages with dismiss capability
@@ -528,4 +529,5 @@ Route protection is enforced in `src/hooks.server.ts`. Unauthenticated users are
 - Chat and document API endpoints independently verify authentication
 - Per-user document isolation — users can only access their own documents
 - Deactivated accounts have all sessions purged on next request
-- **Token budget detection** — Gemini API quota exhaustion is caught and surfaced to users instead of failing silently
+- **Token budget detection** — Gemini API quota exhaustion is caught via server-side caching (60s), in-stream error markers, client-side `Promise.race` timeout (8s), and empty response detection; surfaced to users via a floating toast and disabled input instead of failing silently
+- **API key resilience** — `.trim()` on API key to prevent whitespace-related silent failures

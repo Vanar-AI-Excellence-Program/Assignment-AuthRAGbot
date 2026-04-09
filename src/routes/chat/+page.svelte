@@ -28,6 +28,7 @@
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
 	let tokenBudgetExhausted = $state(false);
+	let showTokenToast = $state(false);
 	let provider = $state('gemini');
 	let isClearing = $state(false);
 	let chatContainer = $state<HTMLDivElement | undefined>(undefined);
@@ -134,6 +135,7 @@
 		isClearing = true;
 		error = null;
 		tokenBudgetExhausted = false;
+		showTokenToast = false;
 		currentConversationId = null;
 		showAllMessages = false;
 		setTimeout(() => {
@@ -181,6 +183,7 @@
 		isLoading = true;
 		error = null;
 		tokenBudgetExhausted = false;
+		showTokenToast = false;
 		shouldScrollToBottom = true;
 
 		const assistantNode = attachChild(userNode, createNode('assistant', ''));
@@ -215,12 +218,29 @@
 
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
+			let streamInterrupted = false;
+			let timedOut = false;
 
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				assistantNode.content += decoder.decode(value, { stream: true });
-				scrollToBottom();
+			const TIMEOUT_MS = 8000;
+			const timeout = new Promise<never>((_, reject) => {
+				setTimeout(() => { timedOut = true; reject(new Error('STREAM_TIMEOUT')); }, TIMEOUT_MS);
+			});
+
+			try {
+				await Promise.race([
+					(async () => {
+						while (true) {
+							const { done, value } = await reader.read();
+							if (done) break;
+							assistantNode.content += decoder.decode(value, { stream: true });
+							scrollToBottom();
+						}
+					})(),
+					timeout
+				]);
+			} catch {
+				streamInterrupted = true;
+				try { reader.cancel(); } catch { /* ignore */ }
 			}
 
 			// Check for in-stream error markers
@@ -230,13 +250,22 @@
 			}
 			if (assistantNode.content.includes('<!--ERROR:STREAM_FAILED-->')) {
 				assistantNode.content = assistantNode.content.replace('<!--ERROR:STREAM_FAILED-->', '').trimEnd();
-				throw new Error('The response was interrupted. Please try again.');
+				streamInterrupted = true;
+			}
+
+			// Empty or timed out — treat as quota exhausted
+			if (!assistantNode.content.trim() || timedOut) {
+				throw new Error('TOKEN_BUDGET_EXHAUSTED');
 			}
 
 			const { cleanContent, citations } = parseCitations(assistantNode.content);
 			assistantNode.content = cleanContent;
 			if (citations.length > 0) {
 				assistantNode.citations = citations;
+			}
+
+			if (streamInterrupted) {
+				assistantNode.content = cleanContent + '\n\n---\n*Response interrupted — you can regenerate to get a complete answer.*';
 			}
 
 			// Update existing DB record or create new one
@@ -247,7 +276,7 @@
 						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
 							messageId: oldDbId,
-							content: cleanContent,
+							content: assistantNode.content,
 							citations: citations.length > 0 ? citations : null
 						})
 					});
@@ -259,7 +288,7 @@
 					currentConversationId,
 					userNode.dbId,
 					'assistant',
-					cleanContent,
+					assistantNode.content,
 					citations.length > 0 ? citations : undefined
 				);
 				if (assistantDbId) assistantNode.dbId = assistantDbId;
@@ -268,11 +297,14 @@
 			const msg = e instanceof Error ? e.message : 'Something went wrong';
 			if (msg === 'TOKEN_BUDGET_EXHAUSTED') {
 				tokenBudgetExhausted = true;
+				showTokenToast = true;
 				error = null;
 			} else {
 				error = msg;
 			}
-			userNode.children = userNode.children.filter((c) => c.id !== assistantNode.id);
+			if (!assistantNode.content.trim()) {
+				userNode.children = userNode.children.filter((c) => c.id !== assistantNode.id);
+			}
 		} finally {
 			isLoading = false;
 		}
@@ -375,6 +407,7 @@
 		isLoading = true;
 		error = null;
 		tokenBudgetExhausted = false;
+		showTokenToast = false;
 		shouldScrollToBottom = true;
 
 		const assistantNodeData = createNode('assistant', '');
@@ -437,14 +470,30 @@
 
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
+			let streamInterrupted = false;
+			let timedOut = false;
 
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
+			const TIMEOUT_MS = 8000;
+			const timeout = new Promise<never>((_, reject) => {
+				setTimeout(() => { timedOut = true; reject(new Error('STREAM_TIMEOUT')); }, TIMEOUT_MS);
+			});
 
-				const chunk = decoder.decode(value, { stream: true });
-				assistantNode.content += chunk;
-				scrollToBottom();
+			try {
+				await Promise.race([
+					(async () => {
+						while (true) {
+							const { done, value } = await reader.read();
+							if (done) break;
+							const chunk = decoder.decode(value, { stream: true });
+							assistantNode.content += chunk;
+							scrollToBottom();
+						}
+					})(),
+					timeout
+				]);
+			} catch {
+				streamInterrupted = true;
+				try { reader.cancel(); } catch { /* ignore */ }
 			}
 
 			// Check for in-stream error markers
@@ -454,7 +503,12 @@
 			}
 			if (assistantNode.content.includes('<!--ERROR:STREAM_FAILED-->')) {
 				assistantNode.content = assistantNode.content.replace('<!--ERROR:STREAM_FAILED-->', '').trimEnd();
-				throw new Error('The response was interrupted. Please try again.');
+				streamInterrupted = true;
+			}
+
+			// Empty or timed out — treat as quota exhausted
+			if (!assistantNode.content.trim() || timedOut) {
+				throw new Error('TOKEN_BUDGET_EXHAUSTED');
 			}
 
 			// Parse citations from stream
@@ -464,13 +518,17 @@
 				assistantNode.citations = citations;
 			}
 
+			if (streamInterrupted) {
+				assistantNode.content = cleanContent + '\n\n---\n*Response interrupted — you can regenerate to get a complete answer.*';
+			}
+
 			// Save assistant message to DB
 			if (currentConversationId && userDbId) {
 				const assistantDbId = await saveMessage(
 					currentConversationId,
 					userDbId,
 					'assistant',
-					cleanContent,
+					assistantNode.content,
 					citations.length > 0 ? citations : undefined
 				);
 				if (assistantDbId) assistantNode.dbId = assistantDbId;
@@ -479,11 +537,14 @@
 			const msg = e instanceof Error ? e.message : 'Something went wrong';
 			if (msg === 'TOKEN_BUDGET_EXHAUSTED') {
 				tokenBudgetExhausted = true;
+				showTokenToast = true;
 				error = null;
 			} else {
 				error = msg;
 			}
-			userNode.children = userNode.children.filter((c) => c.id !== assistantNode.id);
+			if (!assistantNode.content.trim()) {
+				userNode.children = userNode.children.filter((c) => c.id !== assistantNode.id);
+			}
 		} finally {
 			isLoading = false;
 		}
@@ -671,29 +732,10 @@
 						{/if}
 					{/each}
 
-					<!-- Token Budget Exhausted Warning -->
+					<!-- Token budget inline note -->
 					{#if tokenBudgetExhausted}
-						<div class="animate-scale-in flex justify-center">
-							<div class="bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 text-sm rounded-2xl p-5 border border-amber-200 dark:border-amber-800/60 max-w-lg w-full shadow-sm">
-								<div class="flex items-start gap-3">
-									<div class="w-10 h-10 bg-amber-100 dark:bg-amber-900/40 rounded-xl flex items-center justify-center flex-shrink-0">
-										<svg class="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-										</svg>
-									</div>
-									<div class="flex-1">
-										<p class="font-semibold text-amber-900 dark:text-amber-100">Token budget exhausted</p>
-										<p class="mt-1 text-xs text-amber-700 dark:text-amber-300/80 leading-relaxed">
-											The AI model's free-tier token quota has been reached. Pascal is temporarily unavailable. Please try again later or contact the administrator.
-										</p>
-									</div>
-									<button aria-label="Dismiss" onclick={() => (tokenBudgetExhausted = false)} class="text-amber-400 hover:text-amber-600 dark:hover:text-amber-300 flex-shrink-0 mt-0.5">
-										<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-										</svg>
-									</button>
-								</div>
-							</div>
+						<div class="flex justify-center">
+							<p class="text-xs text-amber-600 dark:text-amber-400 italic">Pascal is temporarily unavailable — token quota reached.</p>
 						</div>
 					{/if}
 
@@ -721,7 +763,7 @@
 			<!-- Input Area -->
 			<div class="flex-shrink-0 pl-16 pr-4 sm:pr-6 py-3">
 				<div class="max-w-4xl mx-auto">
-					<ChatInput bind:value={input} onsubmit={handleSubmit} disabled={isLoading} onfileupload={handleFileUpload} {attachedFile} onremovefile={() => (attachedFile = null)} />
+					<ChatInput bind:value={input} onsubmit={handleSubmit} disabled={isLoading || tokenBudgetExhausted} onfileupload={handleFileUpload} {attachedFile} onremovefile={() => (attachedFile = null)} />
 					<p class="text-[11px] text-gray-400 dark:text-gray-500 text-center mt-1.5">
 						<span class="font-semibold text-blue-500/70 dark:text-blue-400/70">Passly</span><span class="mx-1 text-gray-300 dark:text-gray-600">:</span><span>Secured by</span>
 						<span class="font-semibold text-gray-500 dark:text-gray-400">Pascal.</span>
@@ -731,4 +773,26 @@
 		</div>
 		{/if}
 	</div>
+
+	<!-- Floating Token Budget Toast -->
+	{#if showTokenToast}
+		<div class="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-slide-down">
+			<div class="bg-amber-50 dark:bg-amber-950/90 border border-amber-300 dark:border-amber-700 rounded-2xl shadow-xl shadow-amber-500/10 px-5 py-4 flex items-center gap-3 max-w-md backdrop-blur-sm">
+				<div class="w-9 h-9 bg-amber-100 dark:bg-amber-900/50 rounded-xl flex items-center justify-center flex-shrink-0">
+					<svg class="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+					</svg>
+				</div>
+				<div class="flex-1 min-w-0">
+					<p class="font-semibold text-sm text-amber-900 dark:text-amber-100">Token quota reached</p>
+					<p class="text-xs text-amber-700 dark:text-amber-300/80 mt-0.5">Pascal is temporarily unavailable. Please try again later.</p>
+				</div>
+				<button aria-label="Dismiss" onclick={() => (showTokenToast = false)} class="text-amber-400 hover:text-amber-600 dark:hover:text-amber-300 flex-shrink-0 p-1 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors">
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</button>
+			</div>
+		</div>
+	{/if}
 </div>

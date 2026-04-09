@@ -4,6 +4,24 @@ import { env } from "$env/dynamic/private";
 import type { RequestHandler } from "./$types";
 import { retrieveRelevantChunks, retrieveChunksByFilename, buildContextPrompt } from "$lib/server/rag";
 
+// Cache quota errors for 60s to avoid wasting API calls
+let quotaBlockedUntil = 0;
+
+function isQuotaError(err: any): boolean {
+  const msg = String(err?.message ?? "").toLowerCase();
+  const status = err?.status ?? err?.statusCode ?? 0;
+  return (
+    status === 429 ||
+    status === 403 ||
+    msg.includes("quota") ||
+    msg.includes("rate limit") ||
+    msg.includes("resource exhausted") ||
+    msg.includes("billing") ||
+    msg.includes("exceeded") ||
+    msg.includes("token limit")
+  );
+}
+
 export const POST: RequestHandler = async ({ request, locals }) => {
   const session = await locals.auth();
   if (!session?.user) {
@@ -15,7 +33,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
   // Limit conversation history to last 20 messages to reduce memory/token usage
   const messages = rawMessages.slice(-20);
 
-  const apiKey = env.GOOGLE_GENERATIVE_AI_API_KEY;
+  const apiKey = env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
   if (!apiKey)
     return new Response("Gemini API key not configured", { status: 503 });
   const google = createGoogleGenerativeAI({ apiKey });
@@ -66,92 +84,51 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     }
   }
 
-  const systemPrompt = `You are a helpful, friendly AI assistant. Follow these formatting rules strictly:
+  const systemPrompt = `You are Pascal, a warm and friendly AI assistant. Use emojis occasionally to keep things lively (👋, ✨, 💡, ✅, 🚀) but don't overuse them. Be conversational, encouraging, and helpful.
 
-## Response Formatting
-- Use proper **Markdown** for all responses.
-- Keep responses concise, well-structured, and easy to read.
+Keep responses short and to the point. Prefer 2-4 sentences for simple questions. Only give longer responses when the user asks for detail or the topic requires it. Get to the answer fast — no filler, no preamble.
 
-## Code
-- EVERY code block MUST have a language identifier. This is a STRICT requirement with NO exceptions.
-- The opening fence MUST always be \`\`\`language — for example: \`\`\`python, \`\`\`javascript, \`\`\`java, \`\`\`cpp, \`\`\`c, \`\`\`html, \`\`\`css, \`\`\`sql, \`\`\`bash, \`\`\`typescript, \`\`\`rust, \`\`\`go, \`\`\`ruby, \`\`\`php, \`\`\`swift, \`\`\`kotlin, \`\`\`yaml, \`\`\`json, \`\`\`xml, \`\`\`markdown, etc.
-- NEVER write a bare \`\`\` without a language. If you are unsure of the language, use \`\`\`plaintext.
-- For shell/terminal commands, always use \`\`\`bash.
-- For configuration files, use the appropriate language: \`\`\`yaml, \`\`\`json, \`\`\`toml, \`\`\`ini, etc.
-- For output/logs with no specific language, use \`\`\`bash.
-- When the user asks for code in a specific language, write the code in that exact language.
-- Use inline \`code\` for short references like variable names, commands, or file paths.
-- Add brief comments in code when helpful.
-- Keep code lines under 60 characters when possible. Break long lines naturally so they are readable on mobile without horizontal scrolling.
+Formatting rules:
+- Use Markdown: **bold** for emphasis, bullet lists for multiple points, \`inline code\` for technical terms.
+- Code blocks MUST have a language tag (e.g. \`\`\`python). Never use bare \`\`\`. Use \`\`\`plaintext if unsure. Keep code lines under 60 chars.
+- Tables: max 3-4 columns, short cell values. Always add a brief summary after a table.
+- Use headings only for longer multi-section responses.
+- Never wrap an entire response in a code block.${ragContext}`;
 
-## Tables
-- When presenting tabular or comparative data, always use Markdown tables with proper headers and alignment.
-- After every table, always include a short summary paragraph that highlights key takeaways or explains the data shown in the table. Never end a response immediately after a table.
-- IMPORTANT: Keep tables narrow and mobile-friendly. Maximum 3-4 columns. Use short, concise column headers and cell values.
-- If data has more than 4 columns, split into multiple smaller tables or use a list format instead.
-- Keep cell content brief — use abbreviations or short phrases, not full sentences inside cells.
-- Example format:
-  | Column 1 | Column 2 | Column 3 |
-  |----------|----------|----------|
-  | data     | data     | data     |
-
-  As shown above, [brief explanation of the data].
-
-## Lists & Structure
-- Use bullet points or numbered lists for steps, options, or enumerations.
-- Use headings (##, ###) to organize longer responses into sections.
-- Use **bold** for emphasis and key terms.
-
-## General
-- Do not wrap entire responses in a code block.
-- Respond directly without unnecessary preamble.${ragContext}`;
-
-  let result;
-  try {
-    result = streamText({
-      model,
-      system: systemPrompt,
-      messages,
-    });
-  } catch (err: any) {
-    const msg = err?.message?.toLowerCase?.() ?? "";
-    const status = err?.status ?? err?.statusCode ?? 0;
-    const isQuota =
-      status === 429 || status === 403 ||
-      msg.includes("quota") || msg.includes("rate limit") ||
-      msg.includes("resource exhausted") || msg.includes("billing") ||
-      msg.includes("exceeded") || msg.includes("token limit");
-
-    if (isQuota) {
-      return new Response("TOKEN_BUDGET_EXHAUSTED", { status: 429 });
-    }
-    return new Response("Failed to generate response", { status: 500 });
+  // Check if we recently hit a quota error — avoid wasting requests
+  if (quotaBlockedUntil > Date.now()) {
+    return new Response("TOKEN_BUDGET_EXHAUSTED", { status: 429 });
   }
 
-  // Create a TransformStream to collect full response and conditionally append citations
+  const result = streamText({
+    model,
+    system: systemPrompt,
+    messages,
+  });
+
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
 
   (async () => {
     try {
-      const textStream = result.toTextStreamResponse();
-      const reader = textStream.body!.getReader();
       let fullResponse = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        await writer.write(value);
-        fullResponse += decoder.decode(value, { stream: true });
+      for await (const chunk of result.textStream) {
+        const bytes = encoder.encode(chunk);
+        await writer.write(bytes);
+        fullResponse += chunk;
       }
 
-      // Append citations if chunks were retrieved and the response references
-      // the source content (either via [Source N] notation or by using document info)
-      if (citations.length > 0) {
-        // Check if the LLM used the source content — either explicit citations
-        // or if the response contains keywords from the source snippets
+      // Empty response usually means a silent quota/API failure
+      if (!fullResponse.trim()) {
+        quotaBlockedUntil = Date.now() + 60_000;
+        await writer.write(
+          encoder.encode("\n\n<!--ERROR:TOKEN_BUDGET_EXHAUSTED-->")
+        );
+      } else if (citations.length > 0) {
+        // Append citations if chunks were retrieved and the response references
+        // the source content
         const usedSources = /\[Source \d+\]/.test(fullResponse);
         const referencedContent = citations.some((c) => {
           const keywords = c.snippet.split(/\s+/).filter((w) => w.length > 5).slice(0, 5);
@@ -167,30 +144,22 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     } catch (err: any) {
       console.error("Stream error:", err);
 
-      // Detect quota / rate-limit / billing errors from the Gemini API
-      const msg = err?.message?.toLowerCase?.() ?? "";
-      const status = err?.status ?? err?.statusCode ?? 0;
-      const isQuota =
-        status === 429 ||
-        status === 403 ||
-        msg.includes("quota") ||
-        msg.includes("rate limit") ||
-        msg.includes("resource exhausted") ||
-        msg.includes("billing") ||
-        msg.includes("exceeded") ||
-        msg.includes("token limit");
-
-      if (isQuota) {
-        await writer.write(
-          encoder.encode("\n\n<!--ERROR:TOKEN_BUDGET_EXHAUSTED-->")
-        );
-      } else {
-        await writer.write(
-          encoder.encode("\n\n<!--ERROR:STREAM_FAILED-->")
-        );
+      try {
+        if (isQuotaError(err)) {
+          quotaBlockedUntil = Date.now() + 60_000;
+          await writer.write(
+            encoder.encode("\n\n<!--ERROR:TOKEN_BUDGET_EXHAUSTED-->")
+          );
+        } else {
+          await writer.write(
+            encoder.encode("\n\n<!--ERROR:STREAM_FAILED-->")
+          );
+        }
+      } catch {
+        // Writer may already be closed/errored — ignore
       }
     } finally {
-      await writer.close();
+      try { await writer.close(); } catch { /* already closed */ }
     }
   })();
 

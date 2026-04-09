@@ -3,6 +3,7 @@ import { documents, chunks } from '$lib/server/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { chunkText } from '$lib/server/chunker';
 import { getEmbeddings } from '$lib/server/embedding';
+import { logAudit, requestMeta } from '$lib/server/audit';
 import type { RequestHandler } from '@sveltejs/kit';
 
 export const GET: RequestHandler = async ({ locals }) => {
@@ -119,6 +120,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			.select()
 			.from(documents)
 			.where(eq(documents.id, doc.id));
+
+		logAudit({
+			userId: session.user.id,
+			action: 'document_uploaded',
+			detail: `Uploaded "${file.name}" (${textChunks.length} chunks)`,
+			...requestMeta(request)
+		});
 
 		return Response.json(updatedDoc, { status: 201 });
 	} catch (error) {

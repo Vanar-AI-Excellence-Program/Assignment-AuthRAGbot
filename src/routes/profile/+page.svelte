@@ -437,7 +437,7 @@
 		{/if}
 	</div>
 
-	<!-- Security Activity -->
+	<!-- Recent Activity -->
 	<a
 		href="/security"
 		class="animate-slide-up-delay-4 glass-card rounded-2xl shadow-sm p-6 sm:p-8 mb-6 flex items-center justify-between group hover:border-indigo-300 dark:hover:border-indigo-700 transition-all block"
@@ -449,7 +449,7 @@
 				</svg>
 			</div>
 			<div>
-				<h2 class="text-lg font-bold text-gray-900 dark:text-white">Security Activity</h2>
+				<h2 class="text-lg font-bold text-gray-900 dark:text-white">Recent Activity</h2>
 				<p class="text-xs text-gray-500 dark:text-gray-400">View sign-ins, password changes, and other account events</p>
 			</div>
 		</div>

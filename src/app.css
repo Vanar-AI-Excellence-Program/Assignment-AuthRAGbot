@@ -62,6 +62,22 @@ html.dark-transitioning *::after {
 	animation: mobile-menu-in 0.2s ease-out;
 }
 
+/* Toast slide-down */
+@keyframes slide-down-toast {
+	from {
+		opacity: 0;
+		transform: translate(-50%, -100%);
+	}
+	to {
+		opacity: 1;
+		transform: translate(-50%, 0);
+	}
+}
+
+.animate-slide-down {
+	animation: slide-down-toast 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 /* Slide-up: uses transform only (no opacity:0 start) to avoid blocking LCP.
    Content is visible from first paint; transform doesn't cause CLS. */
 @keyframes slide-up {
@@ -416,6 +432,79 @@ html.dark {
 .code-copy-btn:hover {
 	color: #e2e8f0;
 	background: rgba(255, 255, 255, 0.1);
+}
+
+/* List styling — prominent bullets */
+.prose ul {
+	list-style: none;
+	padding-left: 0;
+}
+
+.prose ul > li {
+	position: relative;
+	padding-left: 1.5rem;
+}
+
+.prose ul > li::before {
+	content: '';
+	position: absolute;
+	left: 0.25rem;
+	top: 0.55rem;
+	width: 0.4rem;
+	height: 0.4rem;
+	border-radius: 9999px;
+	background: #6366f1;
+}
+
+.dark .prose ul > li::before {
+	background: #818cf8;
+}
+
+/* Nested bullets — different style */
+.prose ul > li > ul > li::before {
+	border-radius: 0;
+	width: 0.35rem;
+	height: 0.35rem;
+	background: transparent;
+	border: 1.5px solid #6366f1;
+}
+
+.dark .prose ul > li > ul > li::before {
+	border-color: #818cf8;
+}
+
+.prose ol {
+	list-style: none;
+	padding-left: 0;
+	counter-reset: ol-counter;
+}
+
+.prose ol > li {
+	position: relative;
+	padding-left: 1.75rem;
+	counter-increment: ol-counter;
+}
+
+.prose ol > li::before {
+	content: counter(ol-counter);
+	position: absolute;
+	left: 0;
+	top: 0.1rem;
+	width: 1.2rem;
+	height: 1.2rem;
+	font-size: 0.65rem;
+	font-weight: 700;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 9999px;
+	background: #eef2ff;
+	color: #6366f1;
+}
+
+.dark .prose ol > li::before {
+	background: rgba(99, 102, 241, 0.2);
+	color: #a5b4fc;
 }
 
 /* Inline code styling */

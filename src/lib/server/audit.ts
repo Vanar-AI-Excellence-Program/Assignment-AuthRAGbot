@@ -14,7 +14,9 @@ export type AuditAction =
 	| 'account_deactivated'
 	| 'account_activated'
 	| 'account_deleted'
-	| 'role_changed';
+	| 'role_changed'
+	| 'document_uploaded'
+	| 'document_deleted';
 
 interface AuditEntry {
 	userId?: string | null;
